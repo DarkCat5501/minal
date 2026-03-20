@@ -1,0 +1,3 @@
+[submodule "carrlib"]
+	path = carrlib
+	url = https://github.com/CarraraSoftware/carrlib
