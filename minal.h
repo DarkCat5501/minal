@@ -41,7 +41,7 @@
 #define BELL      0x07
 #define BACKSPACE 0x08
 #define LINEFEED  0X0A
-#define DEL       0x7B
+#define DEL       0x7F
 
 // ANSI ESCAPE CODES
 #define ESC        "\x1B"
@@ -68,9 +68,9 @@ typedef struct {
 } Cursor;
 
 typedef struct {
-    char*  items;
-    size_t len;
-    size_t cap;
+    uint8_t* items;
+    size_t   len;
+    size_t   cap;
 } Line;
 
 typedef struct {
