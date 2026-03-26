@@ -1,8 +1,6 @@
 #include "minal.h"
-#include "carrlib/vec.h"
-#include <SDL3/SDL_keycode.h>
 
-bool is_utf8_head(uint8_t ch) 
+bool is_utf8_head(uint8_t ch)
 {
     return ((ch >> 7) & 1) == 1 &&
             (ch >> 6)  != 0b10;
@@ -23,7 +21,7 @@ size_t utf8_chrlen(char ch)
 }
 
 
-void minal_spawn_shell(Minal* m) 
+void minal_spawn_shell(Minal* m)
 {
     int master_fd;
     int slave_fd;
@@ -34,9 +32,31 @@ void minal_spawn_shell(Minal* m)
 
     if (fork() == 0) {
         login_tty(slave_fd);
-        char* env[] = {"TERM=DUMB" ,"PS1=$ ", "LANG=en_US.UTF-8",NULL};
-        // char* env[] = {"TERM=vt100", "PS1=$ ",  NULL};
-        // char* env[] = {"TERM=xterm-256color" ,"PS1=$ ", NULL};
+        char cols[50];
+        char rows[50];
+        char patharg[1024];
+        char* pathvar = getenv("PATH");
+        if (pathvar == NULL) {
+            printf("ERROR: failed to get 'PATH' envvar\n");
+            exit(1);
+        }
+
+        sprintf(patharg, "PATH=%s", pathvar);
+        sprintf(cols, "COLUMNS=%d,", m->config.n_cols);
+        sprintf(rows, "LINES=%d,", m->config.n_rows);
+        char* env[] = {
+            "TERM=vt100",
+            // "TERM=xterm-256color",
+            // "TERM=xterm",
+            // "TERM=dumb",
+            "PS1=$ ",
+            // "COLUMNS=999999",
+            cols,
+            rows,
+            patharg,
+            "LANG=en_US.UTF-8",
+            NULL,
+        };
         char* path = "/bin/bash";
         char* argv[] = { path, NULL };
         if (execve(path, argv, env) == -1) {
@@ -45,7 +65,7 @@ void minal_spawn_shell(Minal* m)
         };
         usleep(2000);
         exit(0);
-    } 
+    }
 
     m->master_fd = master_fd;
     m->slave_fd  = slave_fd;
@@ -54,8 +74,6 @@ void minal_spawn_shell(Minal* m)
 Minal minal_init()
 {
     Minal m = {0};
-    minal_spawn_shell(&m);
-    m.run = true;
 
     SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS);
     assert(TTF_Init());
@@ -65,6 +83,9 @@ Minal minal_init()
     m.config.n_cols      = DEFAULT_N_COLS;
     m.config.n_rows      = DEFAULT_N_ROWS;
     m.config.display_dpi = DEFAULT_DISPLAY_DPI;
+
+    minal_spawn_shell(&m);
+    m.run = true;
 
     m.config.font = TTF_OpenFont(FONT_FILE, m.config.font_size);
     assert(m.config.font != NULL);
@@ -109,17 +130,148 @@ Minal minal_init()
         .g = 0,
         .b = 0,
         .a = 255,
-    };            
+    };
 
     return m;
 }
+
+void minal_parse_ansi(Minal* m, StringView* bytes)
+{
+    uint8_t b = sv_chop_left(bytes);
+
+    if (b == CONTROL_SEQUENCE_INTRODUCER) {
+        b = sv_first(bytes);
+
+        if (b == '?') {
+            sv_chop_left(bytes);
+
+            int opt = -1;
+            if (isdigit(sv_first(bytes))) {
+                opt = sv_parse_int(bytes);
+            }
+
+            b = sv_chop_left(bytes);
+
+            if (opt == 25) {
+            }
+
+            if (opt == 1004) {
+            }
+
+            if (opt == 1049) {
+            }
+
+            if (opt == 2004) {
+                if (b == 'h') {
+                    m->bracket_mode = true;
+                }
+
+                if (b == 'l') {
+                    m->bracket_mode = false;
+                }
+            }
+
+            return;
+        }
+
+        int argv[10] = {-1};
+        int argc     = 0;
+
+        while (isdigit(sv_first(bytes))) {
+            argv[argc++] = sv_parse_int(bytes);
+            if (sv_first(bytes) != ';') {
+                break;
+            };
+            sv_chop_left(bytes);
+        }
+
+        b = sv_chop_left(bytes);
+        switch (b) {
+
+        case CURSOR_UP: {
+            int opt = argc > 0 ? argv[0] : 1;
+
+            size_t new_row;
+            if (m->cursor.row < opt) {
+                new_row = 0;
+            } else {
+                new_row = m->cursor.row - opt;
+            }
+            minal_cursor_move(m, m->cursor.col, new_row);
+        }; break;
+
+        case CURSOR_DOWN: {
+            int opt = argc > 0 ? argv[0] : 1;
+
+            size_t new_row;
+            if (m->cursor.row + opt >= m->config.n_rows) {
+                new_row = m->config.n_rows - 1;
+            } else {
+                new_row = m->cursor.row + opt;
+            }
+            minal_cursor_move(m, m->cursor.col, new_row);
+        }; break;
+
+        case CURSOR_FORWARD: {
+            int opt = argc > 0 ? argv[0] : 1;
+
+            size_t new_col;
+            if (m->cursor.col + opt >= m->config.n_cols) {
+                new_col = m->config.n_cols - 1;
+            } else {
+                new_col = m->cursor.col + opt;
+            }
+            minal_cursor_move(m, new_col, m->cursor.row);
+        }; break;
+
+        case CURSOR_BACK: {
+            int opt = argc > 0 ? argv[0] : 1;
+
+            size_t new_col;
+            if (m->cursor.col < opt) {
+                new_col = 0;
+            } else {
+                new_col = m->cursor.col - opt;
+            }
+            minal_cursor_move(m, new_col, m->cursor.row);
+        }; break;
+
+        case CURSOR_POSITION: {
+            int opt1 = argc > 0 ? argv[0] : 1;
+            int opt2 = argc > 1 ? argv[1] : 1;
+
+            size_t new_col = MIN(MAX(0, opt1 - 1), m->config.n_cols - 1);
+            size_t new_row = MIN(MAX(0, opt2 - 1), m->config.n_rows - 1);
+            minal_cursor_move(m, new_col, new_row);
+        }; break;
+
+        case ERASE_IN_DISPLAY: {
+            size_t opt;
+            if (argv[0] == -1) {
+                opt = 0;
+            }
+            minal_erase_in_display(m, opt);
+        }; break;
+
+        case ERASE_IN_LINE: {
+            size_t opt;
+            if (argv[0] == -1) {
+                opt = 0;
+            }
+            minal_erase_in_line(m, opt);
+        }; break;
+
+        }
+    }
+}
+
 
 SDL_FRect minal_cursor_to_rect(Minal* m)
 {
     return (SDL_FRect) {
         .x = m->cursor.col * m->config.cell_width,
         .y = m->cursor.row * m->config.cell_height,
-        .w = m->config.cell_width, 
+        .w = m->config.cell_width,
         .h = m->config.cell_height,
     };
 }
@@ -142,90 +294,83 @@ void minal_write_char(Minal* m, int c)
 }
 
 
-int minal_read_nonblock(Minal* m, char* buf)
+int minal_read_nonblock(Minal* m, char* buf, size_t n)
 {
     int oldf = fcntl(m->master_fd, F_GETFL, 0);
     assert(oldf != -1);
     int ret = fcntl(m->master_fd, F_SETFL, oldf | O_NONBLOCK);
     assert(ret != -1);
-    int n = read(m->master_fd, buf, _32K);
-    if (n == -1) {
+    int res = read(m->master_fd, buf, n);
+    if (res == -1) {
         if (errno != EAGAIN && errno != EWOULDBLOCK) {
             printf("ERROR: read nonblock: %s\n", strerror(errno));
             exit(1);
         }
         return 0;
     }
-    return n;
+    return res;
 }
 
-size_t minal_line_col2idx(Minal* m, size_t col, size_t row)
-// 
-// col:  0  1   2            3  4   5      6  7   8         9
-//     [ _, _, {_, _, _, _}, _, _, {_, _}, _, _, {_, _, _}, _ ]
-// idx:  0  1   2  3  4  5   6  7   8  9  10 11  12 13 14  15
-//              ^
-//           start = 2
-//           start + size = start + 4 = 2 + 4 = 6
-//           start + size - size = start
-// col = 2 => col2idx = 2
-// col = 3 => col2idx = 6
-// col = 5 => col2idx = 8
-// col = 8 => col2idx = 12
+size_t line_col2idx(Line* l, size_t col)
+/////////////////////////////////////////////////////////////////////////////////
+//                                                                             //
+// col:  0  1   2            3  4   5      6  7   8         9                  //
+//     [ _, _, {_, _, _, _}, _, _, {_, _}, _, _, {_, _, _}, _ ]                //
+// idx:  0  1   2  3  4  5   6  7   8  9  10 11  12 13 14  15                  //
+//              ^                                                              //
+//           start = 2                                                         //
+//           start + size = start + 4 = 2 + 4 = 6                              //
+//           start + size - size = start                                       //
+// col = 2  => col2idx = 2                                                     //
+// col = 3  => col2idx = 6                                                     //
+// col = 5  => col2idx = 8                                                     //
+// col = 8  => col2idx = 12                                                    //
+// col = 10 => col2idx = 16                                                    //
+// col = 11 => col2idx = 17                                                    //
+// col = 15 => col2idx = 21                                                    //
+//                                                                             //
+/////////////////////////////////////////////////////////////////////////////////
 {
-    Line l = m->display.items[row];
-    if (l.len == 0) return 0;
+    if (l->len == 0) return 0;
 
     size_t i = 0;
     size_t cols = 0;
-    while (i < l.len && cols < col) {
-        i += utf8_chrlen(l.items[i]);
+    while (cols < col) {
+        if (i >= l->len) {
+            i++;
+        } else {
+            i += utf8_chrlen(l->items[i]);
+        }
         cols++;
     }
 
     return i;
 }
 
-void minal_line_print(Minal* m, size_t row)
+void line_grow(Line* l)
 {
-    Line line = m->display.items[row];
+    vec_grow(l);
+    return;
+}
+
+void line_print(Line* line)
+{
     printf("    Line After: {\n");
-    printf("     cap:   %zu,\n", line.cap);
-    printf("     len:   %zu,\n", line.len);
+    printf("     cap:   %zu,\n", line->cap);
+    printf("     len:   %zu,\n", line->len);
     printf("     items: [ \n");
-    for (size_t j = 0; j < line.len; ++j) {
-        uint8_t it = line.items[j];
+    for (size_t j = 0; j < line->len; ++j) {
+        uint8_t it = line->items[j];
         printf("        - %08b (%c)\n", it, it);
     }
     printf("   ]}\n");
-}
-
-size_t minal_line_chars(Minal* m, size_t row)
-{
-    Line l = m->display.items[row];
-    if (l.len == 0) return 0;
-
-    int chars = 0;
-
-    size_t i = 0;
-    while (i < l.len) {
-        chars++;
-        i += utf8_chrlen(l.items[i]);
-    }
-
-    return chars;
-}
-
-size_t minal_row_size(Minal* m, size_t row)
-{
-    return m->display.items[row].len;
 }
 
 uint8_t minal_at(Minal *m, size_t col, size_t row)
 {
     assert(row >= 0 && row < m->display.len);
 
-    size_t idx = minal_line_col2idx(m, col, row);
+    size_t idx = line_col2idx(&m->display.items[row], col);
     assert(idx >= 0 && idx < m->display.items[row].len);
 
     return m->display.items[row].items[idx];
@@ -238,28 +383,138 @@ void minal_append(Minal* m, size_t row, char c)
     vec_append(&m->display.items[row], (uint8_t)c);
 }
 
-void minal_insert_at(Minal* m, size_t col, size_t row, char c)
+void minal_insert_at(Minal* m, size_t col, size_t row, uint8_t* c)
 {
     assert(row >= 0 && row < m->display.len);
-    Line r = m->display.items[row];
-    assert(col >= 0 && col < r.len);
-    size_t idx = minal_line_col2idx(m, col, row);
-    if (r.items[idx] == '\0') {
-         r.items[idx] = (uint8_t)c;
-    } else {
-        vec_insert(&r, (uint8_t)c, idx);
+    Line* l = &m->display.items[row];
+    size_t idx  = line_col2idx(l, col);
+    size_t new_size = utf8_chrlen(*c);
+
+    if (idx >= l->len) {
+        int n = idx - l->len;
+        for (int i = 0; i < n; ++i) {
+            minal_append(m, row, ' ');
+        }
+        for (size_t i = 0; i < new_size; ++i) {
+            minal_append(m, row, *(c + i));
+        }
+        return;
     }
+
+    uint8_t head = l->items[idx];
+    size_t tail  = line_col2idx(l, col + 1);
+    size_t old_size = utf8_chrlen(head);
+    int diff = (new_size - old_size);
+
+    if (diff != 0) {
+        if (l->len + diff >= l->cap) {
+            line_grow(l);
+        }
+
+        if (l->len > tail) {
+            size_t n = sizeof(uint8_t) * (l->len - tail);
+            void* src = &l->items[tail];
+            void* dst = &l->items[tail + diff];
+            memmove(dst, src, n);
+
+            int absdiff = abs(diff);
+            size_t udiff = (size_t)absdiff;
+            if (diff < 0) {
+                l->len -= udiff;
+            } else {
+                l->len += udiff;
+            }
+        }
+    }
+
+    for (size_t i = 0; i < new_size; ++i) {
+        uint8_t byte = *(c + i);
+        l->items[idx + i] = byte;
+    }
+
 }
 
-void minal_insert_at_idx(Minal* m, size_t idx, size_t row, char c)
+
+void minal_erase_in_line(Minal* m, size_t opt)
+//////////////////////////////////////////////
+//  opt=0                                   //
+//               start             end      //
+//               v                 v        //
+//  [_, _, _, _, X, _, _, _, _, _, _]       //
+//                                          //
+//  opt=1                                   //
+//   start       end                        //
+//   v           v                          //
+//  [_, _, _, _, X, _, _, _, _, _, _]       //
+//                                          //
+//  opt=2                                   //
+//   start                         end      //
+//   v                             v        //
+//  [_, _, _, _, X, _, _, _, _, _, _]       //
+//                                          //
+//////////////////////////////////////////////
 {
-    assert(row >= 0 && row < m->display.len);
-    Line r = m->display.items[row];
-    assert(idx >= 0 && idx < r.len);
-    if (r.items[idx] == '\0') {
-         r.items[idx] = (uint8_t)c;
+    size_t x    = m->cursor.col;
+    size_t y    = m->cursor.row;
+    Line* line  = &m->display.items[y];
+    size_t start;
+    size_t end;
+
+    if (opt == 1 || opt == 2) {
+        start = 0;
     } else {
-        vec_insert(&r, (uint8_t)c, idx);
+        start = line_col2idx(&m->display.items[y], x);
+    }
+
+    if (opt == 0 || opt == 2) {
+        end = line->len - 1;
+    }  else {
+        end = line_col2idx(&m->display.items[y], x);
+    }
+
+    memset(line->items + start, ' ', end - start + 1);
+}
+
+void minal_erase_in_display(Minal* m, size_t opt)
+{
+    size_t x = m->cursor.col;
+    size_t y = m->cursor.row;
+
+    size_t start;
+    size_t end;
+
+    if (opt == 1 || opt == 2) {
+        start = 0;
+    } else {
+        start = y;
+    }
+
+    if (opt == 0 || opt == 2) {
+        end = m->config.n_rows - 1;
+    }  else {
+        end = y;
+    }
+
+    if (start > end) {
+        size_t tmp = start;
+        start = end;
+        end = tmp;
+    }
+
+    for (size_t row = start; row <= end; ++row) {
+        if (row == y) {
+            minal_cursor_move(m, x, row);
+            minal_erase_in_line(m, opt);
+        } else {
+            minal_cursor_move(m, 0, row);
+            minal_erase_in_line(m, 2);
+        }
+    }
+
+    if (opt == 2) {
+        minal_cursor_move(m, 0, 0);
+    } else {
+        minal_cursor_move(m, x, y);
     }
 }
 
@@ -268,128 +523,108 @@ void minal_receiver(Minal* m)
     SDL_SetRenderDrawColor(m->rend, m->bg_color.r, m->bg_color.g, m->bg_color.b, m->bg_color.a);
     SDL_RenderClear(m->rend);
 
-    bool isutf8;
-    size_t utf8cur;
-    size_t utf8rem;
-    char buf[_32K];
+    size_t offset = 0;
+    char _buf[_32K];
     while (true) {
-        int n = minal_read_nonblock(m, buf);
+        assert(offset < _32K);
+        int n = minal_read_nonblock(m, _buf + offset, _32K - offset);
         if (n == 0) break;
+        offset += n;
+    }
 
-        int i = 0;
-        while (i < n) {
-            uint8_t ch = buf[i];
-            printf("RECEIVED: %08b - %02X - '%c'\n", ch, ch, ch);
-            printf("--------------- ITER ---------------------\n");
-            // i++;
-            // continue;
+    StringView view = (StringView) {
+        .data = _buf,
+        .len  = offset,
+    };
 
-            size_t x   = m->cursor.col;
-            size_t y   = m->cursor.row;
-            Line* line = &m->display.items[y];
-            // printf("Line Before Everything\n");
-            // minal_line_print(m, y);
-            size_t idx = minal_line_col2idx(m, x, y);
+    while (view.len > 0) {
+        uint8_t ch = (uint8_t)sv_chop_left(&view);
 
-            if (ch == BELL) {
-                i++;
-                continue;
-            }
+        size_t x   = m->cursor.col;
+        size_t y   = m->cursor.row;
+        size_t idx = line_col2idx(&m->display.items[y], x);
 
-            if (ch == LINEFEED) {
-                minal_cursor_move(m, 0, y + 1);
-                i++;
-                continue;
-            }
-
-            if (ch == DEL) {
-                printf("RECEIVED DEL\n");
-            }
-
-            if (ch == BACKSPACE) {
-                // col:  0  1  2           3  4
-                //     [ _, _, 0, 0, 0, 0, 0] 
-                // idx:  0  1  2  3  4  5  6
-                //             |
-                // TODO: handle x == 0
-                assert(x > 0);
-                size_t index = minal_line_col2idx(m, x - 1, y);  
-                line->items[index] = '\0';
-                line->len--;
-
-
-                if (m->cursor.col == 0 && m->cursor.row > 0) {
-                    minal_cursor_move(m, m->config.n_cols - 1, m->cursor.row - 1);
-                } else {
-                    minal_cursor_move(m, m->cursor.col - 1, m->cursor.row);
-                }
-
-                i++;
-                continue;
-            }
-
-            // TODO: handle ANSI escape sequences
-            // if (ch == '\x1B') {
-            //     continue;
-            // }
-
-
-            if (is_utf8_head(ch)) {
-                isutf8 = true;
-                size_t chlen = utf8_chrlen(ch);
-                utf8rem = chlen - 1;
-                utf8cur = 0;
-            } else {
-                if (utf8rem > 0) {
-                    assert((ch >> 6) == 0b10);
-                }
-            }
-
-            minal_append(m, y, ch);
-
-            // TODO: handle arbitrary position insertions
-            // if (isutf8) {
-            //     idx = idx + utf8cur;
-            // }
-            // if (idx >= line->len) {
-            //     int n = idx - line->len;
-            //     for (int i = 0; i < n; ++i) {
-            //         minal_append(m, y, ' ');
-            //     }
-            //     printf("Appending Byte '0b%08b'\n", ch) ;
-            // } else {
-            //     printf("Inserting Byte '0b%08b' at %zu\n", ch, idx);
-            //     minal_insert_at_idx(m, idx, y, ch);
-            // }
-
-            if (isutf8) {
-                if (utf8rem > 0) {
-                    utf8cur++;
-                    utf8rem--;
-                } else {
-                    utf8cur = 0;
-                    isutf8 = false;
-                }
-            }
-
-            if (!isutf8) {
-                if (m->cursor.col == m->config.n_cols - 1) {
-                    minal_cursor_move(m, 0, m->cursor.row + 1);
-                } else {
-                    minal_cursor_move(m, m->cursor.col + 1, m->cursor.row);
-                }
-            }
-
-            // printf("Line After Everything\n");
-            // minal_line_print(m, y);
-            i++;
+        if (ch == '\0') {
+            continue;
         }
+
+        if (ch == *BELL) {
+            continue;
+        }
+
+        if (ch == *LINEFEED) {
+            minal_cursor_move(m, x, y + 1);
+            continue;
+        }
+
+        if (ch == *CARRIAGERET) {
+            minal_cursor_move(m, 0, y);
+            continue;
+        }
+
+        if (ch == *DEL) {
+            printf("RECEIVED DEL\n");
+        }
+
+        if (ch == *BACKSPACE) {
+            if (!(x > 0 || y > 0)) {
+                continue;
+            }
+
+            if (x > 0) {
+                minal_cursor_move(m, x - 1, y);
+            } else {
+                size_t last_col = m->config.n_cols - 1;
+                minal_cursor_move(m, last_col, y - 1);
+            }
+
+            continue;
+        }
+
+        if (ch == *ESC) {
+            minal_parse_ansi(m, &view);
+            continue;
+        }
+
+        if (is_utf8_head(ch)) {
+            size_t utf8len = utf8_chrlen(ch);
+            assert(utf8len < 5);
+            size_t  utf8cur = 0;
+            uint8_t utf8code[5];
+
+            for (;;) {
+                assert(utf8cur == 0 || (ch >> 6) == 0b10);
+                utf8code[utf8cur++] = ch;
+                if (utf8cur >= utf8len) {
+                    break;
+                }
+                ch = (uint8_t)sv_chop_left(&view);
+            }
+            utf8code[4] = '\0';
+
+            minal_insert_at(m, x, y, (uint8_t*)utf8code);
+
+            if (m->cursor.col == m->config.n_cols - 1) {
+                minal_cursor_move(m, 0, m->cursor.row + 1);
+            } else {
+                minal_cursor_move(m, m->cursor.col + 1, m->cursor.row);
+            }
+            continue;
+        }
+
+        minal_insert_at(m, x, y, &ch);
+        if (m->cursor.col == m->config.n_cols - 1) {
+            minal_cursor_move(m, 0, m->cursor.row + 1);
+        } else {
+            minal_cursor_move(m, m->cursor.col + 1, m->cursor.row);
+        }
+
     }
 
     m->display_str.len = 0;
     for (size_t row = 0; row < m->display.len; row++) {
         Line l = m->display.items[row];
-        sb_concat(&m->display_str, (char*)l.items);
+        sb_nconcat(&m->display_str, (char*)l.items, l.len);
         sb_append(&m->display_str, '\n');
     }
 
@@ -400,7 +635,7 @@ void minal_receiver(Minal* m)
 
 void minal_transmitter(Minal* m, SDL_Event* event)
 {
-    if (event->type == SDL_EVENT_QUIT) { 
+    if (event->type == SDL_EVENT_QUIT) {
         m->run = false;
         return;
     }
@@ -418,26 +653,6 @@ void minal_transmitter(Minal* m, SDL_Event* event)
             case (SDLK_F1): {
                 minal_write_str(m, "𒀀");
             }; break;
-
-            case (SDLK_BACKSPACE) : {
-                minal_write_char(m, BACKSPACE);
-                break;
-
-                size_t x = m->cursor.col;
-                size_t y = m->cursor.row;
-                assert(x > 0);
-                size_t start = minal_line_col2idx(m, x - 1, y);  
-                uint8_t head = m->display.items[y].items[start];
-
-                if (is_utf8_head(head)) {
-                    size_t n = utf8_chrlen(head);
-                    for (size_t j = 1; j <= n; ++j) {
-                        minal_write_char(m, BACKSPACE);
-                    }
-                } else {
-                    minal_write_char(m, BACKSPACE);
-                }
-            }; break;
             default: {
                 const char* code = SDLK_to_ansicode(k);
                 if (strlen(code) == 0) {
@@ -452,7 +667,7 @@ void minal_transmitter(Minal* m, SDL_Event* event)
     }
 }
 
-void minal_main(Minal* m)
+void minal_run(Minal* m)
 {
     assert(SDL_StartTextInput(m->window));
     while (m->run) {
@@ -498,12 +713,13 @@ void minal_finish(Minal *m)
 int main(void)
 {
     Minal m = minal_init();
-    minal_main(&m);
+    minal_run(&m);
+    minal_finish(&m);
     return 0;
 }
 
 const char* SDLK_to_ansicode(SDL_Keycode key)
-{ 
+{
     switch (key) {
         case SDLK_BACKSPACE: return "\b";
         case SDLK_RETURN:    return "\n";
