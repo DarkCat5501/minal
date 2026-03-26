@@ -11,6 +11,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/param.h>
+#include <sys/wait.h>
 #include <unistd.h>
 #include <utmp.h>
 
@@ -85,6 +86,7 @@ typedef struct {
     TTF_Text*       text;
 
     size_t          input_start;
+    pid_t           shell_pid;
     int             slave_fd;
     int             master_fd;
 

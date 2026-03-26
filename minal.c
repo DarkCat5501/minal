@@ -27,14 +27,16 @@ void minal_spawn_shell(Minal *m) {
     exit(1);
   };
 
-  if (fork() == 0) {
+  m->shell_pid = fork();
+  if (m->shell_pid == 0) {
     login_tty(slave_fd);
     char *defaultshell = getenv("SHELL");
     char cols[50];
     char rows[50];
     char *path = "/usr/bin/bash";
-    if (defaultshell != NULL)
-      path = defaultshell;
+    setenv("SHELL", path, 1);
+    // if (defaultshell != NULL)
+    //   path = defaultshell;
 
     sprintf(cols, "%d", m->config.n_cols);
     sprintf(rows, "%d", m->config.n_rows);
@@ -49,9 +51,56 @@ void minal_spawn_shell(Minal *m) {
     usleep(2000);
     exit(0);
   }
-
   m->master_fd = master_fd;
   m->slave_fd = slave_fd;
+}
+
+void minal_check_shell(Minal *m) {
+  int status;
+  pid_t result = waitpid(m->shell_pid, &status, WNOHANG);
+  if (result == m->shell_pid) {
+    if (WIFEXITED(status)) {
+      printf("Shell exited with code %d\n", WEXITSTATUS(status));
+      m->run = false;
+    } else if (WIFSIGNALED(status)) {
+      printf("Shell signaled with %d\n", WTERMSIG(status));
+      m->run = false;
+    }
+  }
+}
+
+// TODO: create a minal resize display
+void minal_free_display(Minal *m) {
+  for (size_t i = 0; i < m->display.len; ++i)
+    vec_free(&m->display.items[i]);
+  vec_free(&m->display);
+  sb_free(&m->display_str);
+}
+
+void minal_resize_font(Minal *m) {
+  Config *c = &m->config;
+  SDL_GetWindowSize(m->window, &c->window_width, &c->window_height);
+  assert(TTF_SetFontSizeDPI(c->font, c->font_size, c->display_dpi,
+                            c->display_dpi));
+  assert(TTF_GetStringSize(c->font, " ", 1, &c->cell_width, &c->cell_height));
+  c->n_cols = c->window_width / c->cell_width;
+  c->n_rows = c->window_height / c->cell_height;
+}
+
+void minal_resize_display(Minal *m) {
+  static int started = 0;
+
+  if (!started++) {
+    Display *d = &m->display;
+    vec_expandto(d, m->config.n_rows);
+    for (int i = 0; i < m->config.n_rows; ++i) {
+      Line l = {0};
+      vec_expandto(&l, m->config.n_cols);
+      memset(l.items, 0, l.cap * sizeof(char));
+      vec_append(d, l);
+    }
+    m->display_str = sb_with_cap(4 * m->config.n_rows * m->config.n_cols);
+  }
 }
 
 Minal minal_init() {
@@ -62,60 +111,28 @@ Minal minal_init() {
 
   // default configs
   m.config.font_size = DEFAULT_FONT_SIZE;
-  m.config.n_cols = DEFAULT_N_COLS;
-  m.config.n_rows = DEFAULT_N_ROWS;
   m.config.display_dpi = DEFAULT_DISPLAY_DPI;
 
   minal_spawn_shell(&m);
   m.run = true;
 
   m.config.font = TTF_OpenFont(FONT_FILE, m.config.font_size);
-  assert(m.config.font != NULL);
-  assert(TTF_SetFontSizeDPI(m.config.font, m.config.font_size,
-                            m.config.display_dpi, m.config.display_dpi));
-
-  assert(TTF_GetStringSize(m.config.font, "A", 1, &m.config.cell_width,
-                           &m.config.cell_height));
-  m.config.window_width = m.config.cell_width * m.config.n_cols;
-  m.config.window_height = m.config.cell_height * m.config.n_rows;
-
+  assert(m.config.font != NULL && "Could not initialize font");
   m.window = SDL_CreateWindow("Minal", m.config.window_width,
-                              m.config.window_height, 0);
-  assert(m.window != NULL);
-
+                              m.config.window_height, SDL_WINDOW_RESIZABLE);
+  assert(m.window != NULL && "Could not initialize window");
   m.rend = SDL_CreateRenderer(m.window, NULL);
-  assert(m.rend != NULL);
-
+  SDL_SetRenderVSync(m.rend, 1);
+  assert(m.rend != NULL && "Could not initialize renderer");
   m.text_engine = TTF_CreateRendererTextEngine(m.rend);
-  assert(m.text_engine != NULL);
-
+  assert(m.text_engine != NULL && "Could not initialize text engine");
   m.text = TTF_CreateText(m.text_engine, m.config.font, "", 0);
-  assert(m.text != NULL);
+  assert(m.text != NULL && "Could not initialize text object");
+  m.fg_color = (SDL_Color){0xfd, 0xfd, 0xfd, 0xff};
+  m.bg_color = (SDL_Color){0x1a, 0x1a, 0x1a, 0xff};
 
-  Display display = {0};
-  vec_expandto(&display, m.config.n_rows);
-  for (int i = 0; i < m.config.n_rows; ++i) {
-    Line l = {0};
-    vec_expandto(&l, m.config.n_cols);
-    memset(l.items, 0, l.cap * sizeof(char));
-    vec_append(&display, l);
-  }
-  m.display = display;
-  m.display_str = sb_with_cap(4 * m.config.n_rows * m.config.n_cols);
-
-  m.fg_color = (SDL_Color){
-      .r = 220,
-      .g = 220,
-      .b = 220,
-      .a = 255,
-  };
-  m.bg_color = (SDL_Color){
-      .r = 0,
-      .g = 0,
-      .b = 0,
-      .a = 255,
-  };
-
+  minal_resize_font(&m);
+  minal_resize_display(&m);
   return m;
 }
 
@@ -350,7 +367,8 @@ void minal_append(Minal *m, size_t row, char c) {
 }
 
 void minal_insert_at(Minal *m, size_t col, size_t row, uint8_t *c) {
-  assert(row >= 0 && row < m->display.len);
+  assert(row >= 0 && row < m->display.len && "TODO: handle create new lines");
+
   Line *l = &m->display.items[row];
   size_t idx = line_col2idx(l, col);
   size_t new_size = utf8_chrlen(*c);
@@ -442,20 +460,8 @@ void minal_erase_in_display(Minal *m, size_t opt) {
   size_t x = m->cursor.col;
   size_t y = m->cursor.row;
 
-  size_t start;
-  size_t end;
-
-  if (opt == 1 || opt == 2) {
-    start = 0;
-  } else {
-    start = y;
-  }
-
-  if (opt == 0 || opt == 2) {
-    end = m->config.n_rows - 1;
-  } else {
-    end = y;
-  }
+  size_t start = opt == 1 || opt == 2 ? 0 : y;
+  size_t end = opt == 0 || opt == 2 ? m->config.n_rows - 1 : y;
 
   if (start > end) {
     size_t tmp = start;
@@ -473,11 +479,10 @@ void minal_erase_in_display(Minal *m, size_t opt) {
     }
   }
 
-  if (opt == 2) {
+  if (opt == 2)
     minal_cursor_move(m, 0, 0);
-  } else {
+  else
     minal_cursor_move(m, x, y);
-  }
 }
 
 void minal_receiver(Minal *m) {
@@ -602,6 +607,16 @@ void minal_transmitter(Minal *m, SDL_Event *event) {
     return;
   }
 
+  if (event->type == SDL_EVENT_WINDOW_RESIZED) {
+    static int count = 0;
+    if (count == 1) {
+      printf("resize once\n");
+      minal_resize_font(m);
+      minal_resize_display(m);
+    }
+    count++;
+  }
+
   if (event->type == SDL_EVENT_KEY_DOWN) {
     if (event->key.key == SDLK_ESCAPE) {
       m->run = false;
@@ -633,20 +648,16 @@ void minal_run(Minal *m) {
   assert(SDL_StartTextInput(m->window));
   while (m->run) {
     SDL_Event event;
-    while (SDL_PollEvent(&event)) {
+    minal_check_shell(m);
+    while (SDL_PollEvent(&event))
       minal_transmitter(m, &event);
-    }
-
     minal_receiver(m);
 
     SDL_SetRenderDrawColor(m->rend, m->fg_color.r, m->fg_color.g, m->fg_color.b,
                            m->fg_color.a);
     SDL_FRect cur = minal_cursor_to_rect(m);
     SDL_RenderFillRect(m->rend, &cur);
-
     SDL_RenderPresent(m->rend);
-
-    SDL_Delay(1000 / FPS);
   }
 }
 
