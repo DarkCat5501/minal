@@ -34,7 +34,7 @@
 #include "carrlib/vec.h"
 
 #define FONT_FILE "resources/font.ttf"
-#define DEFAULT_FONT_SIZE   20.0f
+#define DEFAULT_FONT_SIZE   10.0f
 #define DEFAULT_DISPLAY_DPI 96
 #define DEFAULT_N_COLS      80
 #define DEFAULT_N_ROWS      24

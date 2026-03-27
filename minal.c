@@ -486,55 +486,47 @@ void minal_erase_in_display(Minal *m, size_t opt) {
 }
 
 void minal_receiver(Minal *m) {
-  SDL_SetRenderDrawColor(m->rend, m->bg_color.r, m->bg_color.g, m->bg_color.b,
-                         m->bg_color.a);
-  SDL_RenderClear(m->rend);
-
   size_t offset = 0;
   char _buf[_32K];
   while (true) {
-    assert(offset < _32K);
+    assert(offset < _32K && "Need a bigger buffer");
     int n = minal_read_nonblock(m, _buf + offset, _32K - offset);
     if (n == 0)
       break;
     offset += n;
   }
-
-  StringView view = (StringView){
-      .data = _buf,
-      .len = offset,
-  };
+  StringView view = (StringView){.data = _buf, .len = offset};
 
   while (view.len > 0) {
     uint8_t ch = (uint8_t)sv_chop_left(&view);
+    if (ch == '\0')
+      continue;
+
+    if (ch == '\n') {
+      printf("new line -------------\n");
+    } else if (ch == '\r') {
+      printf("<---------------------\n");
+    } else if (ch == '\x1b') {
+      printf("input: 0x1b \"ESC\"\n");
+    } else {
+      printf("input: 0x%02X \"%c\"\n", ch, ch);
+    }
 
     size_t x = m->cursor.col;
     size_t y = m->cursor.row;
     size_t idx = line_col2idx(&m->display.items[y], x);
 
-    if (ch == '\0') {
-      continue;
-    }
-
     if (ch == *BELL) {
       continue;
-    }
-
-    if (ch == *LINEFEED) {
+    } else if (ch == *LINEFEED) {
       minal_cursor_move(m, x, y + 1);
       continue;
-    }
-
-    if (ch == *CARRIAGERET) {
+    } else if (ch == *CARRIAGERET) {
       minal_cursor_move(m, 0, y);
       continue;
-    }
-
-    if (ch == *DEL) {
+    } else if (ch == *DEL) {
       printf("RECEIVED DEL\n");
-    }
-
-    if (ch == *BACKSPACE) {
+    } else if (ch == *BACKSPACE) {
       if (!(x > 0 || y > 0)) {
         continue;
       }
@@ -547,14 +539,10 @@ void minal_receiver(Minal *m) {
       }
 
       continue;
-    }
-
-    if (ch == *ESC) {
+    } else if (ch == *ESC) {
       minal_parse_ansi(m, &view);
       continue;
-    }
-
-    if (is_utf8_head(ch)) {
+    } else if (is_utf8_head(ch)) {
       size_t utf8len = utf8_chrlen(ch);
       assert(utf8len < 5);
       size_t utf8cur = 0;
@@ -581,24 +569,12 @@ void minal_receiver(Minal *m) {
     }
 
     minal_insert_at(m, x, y, &ch);
-    if (m->cursor.col == m->config.n_cols - 1) {
-      minal_cursor_move(m, 0, m->cursor.row + 1);
-    } else {
-      minal_cursor_move(m, m->cursor.col + 1, m->cursor.row);
-    }
+    // if (m->cursor.col == m->config.n_cols - 1) {
+    //   minal_cursor_move(m, 0, m->cursor.row + 1);
+    // } else {
+    minal_cursor_move(m, m->cursor.col + 1, m->cursor.row);
+    // }
   }
-
-  m->display_str.len = 0;
-  for (size_t row = 0; row < m->display.len; row++) {
-    Line l = m->display.items[row];
-    sb_nconcat(&m->display_str, (char *)l.items, l.len);
-    sb_append(&m->display_str, '\n');
-  }
-
-  TTF_SetTextString(m->text, m->display_str.data, m->display_str.len);
-  SDL_SetRenderDrawColor(m->rend, m->fg_color.r, m->fg_color.r, m->fg_color.r,
-                         m->fg_color.a);
-  TTF_DrawRendererText(m->text, 0, 0);
 }
 
 void minal_transmitter(Minal *m, SDL_Event *event) {
@@ -609,11 +585,7 @@ void minal_transmitter(Minal *m, SDL_Event *event) {
 
   if (event->type == SDL_EVENT_WINDOW_RESIZED) {
     static int count = 0;
-    if (count == 1) {
-      printf("resize once\n");
-      minal_resize_font(m);
-      minal_resize_display(m);
-    }
+    minal_resize_font(m);
     count++;
   }
 
@@ -653,9 +625,48 @@ void minal_run(Minal *m) {
       minal_transmitter(m, &event);
     minal_receiver(m);
 
-    SDL_SetRenderDrawColor(m->rend, m->fg_color.r, m->fg_color.g, m->fg_color.b,
-                           m->fg_color.a);
-    SDL_FRect cur = minal_cursor_to_rect(m);
+    SDL_SetRenderDrawColor(m->rend, m->bg_color.r, m->bg_color.g, m->bg_color.b,
+                           m->bg_color.a);
+    SDL_RenderClear(m->rend);
+
+    char linebuff[50] = {0};
+    int max_line_nr_len = 0;
+    TTF_SetTextWrapWidth(m->text, m->config.window_width);
+
+    // for (size_t line_nr = 0; line_nr < m->display.len; line_nr++) {
+    //   int len = snprintf(linebuff, sizeof(linebuff), "%3zu|", line_nr);
+    //   if (len > 0) {
+    //     max_line_nr_len = max_line_nr_len > len ? max_line_nr_len : len;
+    //     TTF_SetTextString(m->text, linebuff, len);
+    //     TTF_SetTextColor(m->text, 0xf9,0x99,0x00,0xff);
+    //     TTF_DrawRendererText(m->text, 0, line_nr * m->config.cell_height);
+    //   }
+    // }
+    SDL_FRect cur = (SDL_FRect){
+        .x = m->cursor.col * m->config.cell_width,
+        .y = 0,
+        .w = m->config.cell_width,
+        .h = m->config.cell_height,
+    };
+    int next_h = 0;
+
+    for (size_t line_nr = 0; line_nr < m->display.len; line_nr++) {
+      Line *line = &m->display.items[line_nr];
+
+      if (line_nr == m->cursor.row) cur.y = next_h;
+      if (line->len > 0) {
+        TTF_SetTextString(m->text, (char *)line->items, line->len);
+        int tw, th;
+        TTF_GetTextSize(m->text, &tw, &th);
+
+        TTF_SetTextColor(m->text, 0xfa, 0xfa, 0xfa, 0xff);
+        TTF_DrawRendererText(m->text, 0, next_h);
+        next_h += th;
+      } else {
+        next_h += m->config.cell_height;
+      }
+    }
+    SDL_SetRenderDrawColor(m->rend, 0xff, 0x0a, 0xff, 0xff);
     SDL_RenderFillRect(m->rend, &cur);
     SDL_RenderPresent(m->rend);
   }
