@@ -116,14 +116,12 @@ Minal minal_init()
     Display display = {0};
     vec_expandto(&display, m.config.n_rows);
     for (int i = 0; i < m.config.n_rows; ++i) {
-        Line l = {0};
-        vec_expandto(&l, m.config.n_cols);
-        memset(l.items, 0, l.cap * sizeof(char));
+        Line l = minal_line_alloc(&m);
         vec_append(&display, l);
     }
     m.display     = display;
     m.display_str = sb_with_cap(4 * m.config.n_rows * m.config.n_cols);
-
+    m.row_offset  = 0;
 
     m.fg_color = (SDL_Color) {
         .r = 220,
@@ -193,80 +191,83 @@ void minal_parse_ansi(Minal* m, StringView* bytes)
 
         b = sv_chop_left(bytes);
         switch (b) {
+            
+            case CURSOR_UP: {
+                int opt = argc > 0 ? argv[0] : 1;
 
-        case CURSOR_UP: {
-            int opt = argc > 0 ? argv[0] : 1;
+                size_t new_row;
+                if (m->cursor.row < opt) {
+                    new_row = 0;
+                } else {
+                    new_row = m->cursor.row - opt;
+                }
+                minal_cursor_move(m, m->cursor.col, new_row);
+            }; break;
 
-            size_t new_row;
-            if (m->cursor.row < opt) {
-                new_row = 0;
-            } else {
-                new_row = m->cursor.row - opt;
-            }
-            minal_cursor_move(m, m->cursor.col, new_row);
-        }; break;
+            case CURSOR_DOWN: {
+                int opt = argc > 0 ? argv[0] : 1;
 
-        case CURSOR_DOWN: {
-            int opt = argc > 0 ? argv[0] : 1;
+                size_t new_row;
+                if (m->cursor.row + opt >= m->config.n_rows) {
+                    new_row = m->config.n_rows - 1;
+                } else {
+                    new_row = m->cursor.row + opt;
+                }
+                minal_cursor_move(m, m->cursor.col, new_row);
+            }; break;
 
-            size_t new_row;
-            if (m->cursor.row + opt >= m->config.n_rows) {
-                new_row = m->config.n_rows - 1;
-            } else {
-                new_row = m->cursor.row + opt;
-            }
-            minal_cursor_move(m, m->cursor.col, new_row);
-        }; break;
+            case CURSOR_FORWARD: {
+                int opt = argc > 0 ? argv[0] : 1;
 
-        case CURSOR_FORWARD: {
-            int opt = argc > 0 ? argv[0] : 1;
+                size_t new_col;
+                if (m->cursor.col + opt >= m->config.n_cols) {
+                    new_col = m->config.n_cols - 1;
+                } else {
+                    new_col = m->cursor.col + opt;
+                }
+                minal_cursor_move(m, new_col, m->cursor.row);
+            }; break;
 
-            size_t new_col;
-            if (m->cursor.col + opt >= m->config.n_cols) {
-                new_col = m->config.n_cols - 1;
-            } else {
-                new_col = m->cursor.col + opt;
-            }
-            minal_cursor_move(m, new_col, m->cursor.row);
-        }; break;
+            case CURSOR_BACK: {
+                int opt = argc > 0 ? argv[0] : 1;
 
-        case CURSOR_BACK: {
-            int opt = argc > 0 ? argv[0] : 1;
+                size_t new_col;
+                if (m->cursor.col < opt) {
+                    new_col = 0;
+                } else {
+                    new_col = m->cursor.col - opt;
+                }
+                minal_cursor_move(m, new_col, m->cursor.row);
+            }; break;
 
-            size_t new_col;
-            if (m->cursor.col < opt) {
-                new_col = 0;
-            } else {
-                new_col = m->cursor.col - opt;
-            }
-            minal_cursor_move(m, new_col, m->cursor.row);
-        }; break;
+            case CURSOR_POSITION: {
+                int opt1 = argc > 0 ? argv[0] : 1;
+                int opt2 = argc > 1 ? argv[1] : 1;
 
-        case CURSOR_POSITION: {
-            int opt1 = argc > 0 ? argv[0] : 1;
-            int opt2 = argc > 1 ? argv[1] : 1;
+                size_t new_col = MIN(MAX(0, opt1 - 1), m->config.n_cols - 1);
+                size_t new_row = MIN(MAX(0, opt2 - 1), m->config.n_rows - 1);
+                minal_cursor_move(m, new_col, new_row);
+            }; break;
 
-            size_t new_col = MIN(MAX(0, opt1 - 1), m->config.n_cols - 1);
-            size_t new_row = MIN(MAX(0, opt2 - 1), m->config.n_rows - 1);
-            minal_cursor_move(m, new_col, new_row);
-        }; break;
+            case ERASE_IN_DISPLAY: {
+                size_t opt = argc > 0 ? argv[0] : 0;
+                minal_erase_in_display(m, opt);
+            }; break;
 
-        case ERASE_IN_DISPLAY: {
-            size_t opt;
-            if (argv[0] == -1) {
-                opt = 0;
-            }
-            minal_erase_in_display(m, opt);
-        }; break;
+            case ERASE_IN_LINE: {
+                size_t opt = argc > 0 ? argv[0] : 0;
+                minal_erase_in_line(m, opt);
+            }; break;
 
-        case ERASE_IN_LINE: {
-            size_t opt;
-            if (argv[0] == -1) {
-                opt = 0;
-            }
-            minal_erase_in_line(m, opt);
-        }; break;
+            case SCROLL_UP: {
+                size_t opt = argc > 0 ? argv[0] : 1;
+                minal_pageup(m, opt);
+            }; break;
 
+            case SCROLL_DOWN: {
+                size_t opt = argc > 0 ? argv[0] : 1;
+                minal_pagedown(m, opt);
+            }; break;
         }
     }
 }
@@ -283,6 +284,8 @@ SDL_FRect minal_cursor_to_rect(Minal* m)
 
 void minal_cursor_move(Minal* m, int new_col, int new_row)
 {
+    assert(0 <= new_row && new_row < m->config.n_rows);
+    assert(0 <= new_col && new_col < m->config.n_cols);
     m->cursor.col = new_col;
     m->cursor.row = new_row;
 }
@@ -314,6 +317,38 @@ int minal_read_nonblock(Minal* m, char* buf, size_t n)
         return 0;
     }
     return res;
+}
+
+void minal_new_line(Minal* m)
+{
+    Line new_line = minal_line_alloc(m);
+    vec_append(&m->display, new_line);
+    m->row_offset++;
+}
+
+void minal_pageup(Minal* m, size_t opt)
+{
+    if (m->row_offset > opt) {
+        m->row_offset -= opt;
+    } else {
+        m->row_offset = 0;
+    }
+}
+
+
+void minal_pagedown(Minal* m, size_t opt)
+{
+    if (m->row_offset + opt < m->display.len - m->config.n_rows) {
+        m->row_offset += opt;
+    } else {
+        m->row_offset = m->display.len - m->config.n_rows;
+    }
+}
+
+size_t minal_cursor2absol(Minal* m)
+{
+    assert(m->cursor.row + m->row_offset < m->display.len);
+    return m->cursor.row + m->row_offset;
 }
 
 size_t line_col2idx(Line* l, size_t col)
@@ -351,6 +386,15 @@ size_t line_col2idx(Line* l, size_t col)
 
     return i;
 }
+
+Line minal_line_alloc(Minal* m)
+{
+    Line l = {0};
+    vec_expandto(&l, m->config.n_cols);
+    memset(l.items, 0, l.cap * sizeof(char));
+    return l;
+}
+
 
 void line_grow(Line* l)
 {
@@ -460,44 +504,28 @@ void minal_erase_in_line(Minal* m, size_t opt)
 //////////////////////////////////////////////
 {
     size_t x    = m->cursor.col;
-    size_t y    = m->cursor.row;
+    size_t y    = minal_cursor2absol(m);
     Line* line  = &m->display.items[y];
     size_t start;
     size_t end;
 
-    if (opt == 1 || opt == 2) {
-        start = 0;
-    } else {
-        start = line_col2idx(&m->display.items[y], x);
-    }
+    switch (opt) {
 
-    if (opt == 0 || opt == 2) {
-        end = line->len - 1;
-    }  else {
-        end = line_col2idx(&m->display.items[y], x);
-    }
+        case 1: {
+            start = 0;
+            end = line_col2idx(&m->display.items[y], x);
+        }; break;
 
-    memset(line->items + start, ' ', end - start + 1);
-}
+        case 2: {
+            start = 0;
+            end = line->len - 1;
+        }; break;
 
-void minal_erase_in_display(Minal* m, size_t opt)
-{
-    size_t x = m->cursor.col;
-    size_t y = m->cursor.row;
-
-    size_t start;
-    size_t end;
-
-    if (opt == 1 || opt == 2) {
-        start = 0;
-    } else {
-        start = y;
-    }
-
-    if (opt == 0 || opt == 2) {
-        end = m->config.n_rows - 1;
-    }  else {
-        end = y;
+        case 0:
+        default: {
+            start = line_col2idx(&m->display.items[y], x);
+            end = line->len - 1;
+        }; break;
     }
 
     if (start > end) {
@@ -506,10 +534,55 @@ void minal_erase_in_display(Minal* m, size_t opt)
         end = tmp;
     }
 
+    memset(line->items + start, ' ', end - start + 1);
+    line->len -= end - start + 1;
+}
+
+void minal_erase_in_display(Minal* m, size_t opt)
+{
+    size_t x    = m->cursor.col;
+    size_t y    = m->cursor.row;
+    size_t absy = minal_cursor2absol(m);
+    size_t last_row = m->config.n_rows - 1;
+
+    size_t start;
+    size_t end;
+
+    if (opt == 3) {
+        m->row_offset = 0;
+
+        for (int i = 0; i < m->display.len; ++i) {
+            memset(m->display.items[i].items, ' ', m->display.items[i].len);
+            m->display.items[i].len = 0;
+        }
+
+        m->display.len = m->config.n_rows;
+        minal_cursor_move(m, 0, 0);
+        return;
+    }
+
+    switch (opt) {
+        case 1: {
+            start = 0;
+            end   = y;
+        }; break; 
+
+        case 2: {
+            start = 0;
+            end   = last_row;
+        }; break;
+
+        case 0:
+        default: {
+            start = y;
+            end   = last_row;
+        }; break;
+    }
+
     for (size_t row = start; row <= end; ++row) {
         if (row == y) {
             minal_cursor_move(m, x, row);
-            minal_erase_in_line(m, opt);
+            minal_erase_in_line(m, MIN(opt, 2));
         } else {
             minal_cursor_move(m, 0, row);
             minal_erase_in_line(m, 2);
@@ -521,6 +594,24 @@ void minal_erase_in_display(Minal* m, size_t opt)
     } else {
         minal_cursor_move(m, x, y);
     }
+}
+
+void minal_linefeed(Minal* m)
+{
+    if (m->cursor.row + 1 >= m->config.n_rows) {
+        if (minal_cursor2absol(m) + 1 + m->row_offset >= m->display.len) {
+            minal_new_line(m);
+        } else {
+            minal_pagedown(m, 1);
+        }
+    } else {
+        minal_cursor_move(m, m->cursor.col, m->cursor.row + 1);
+    }
+}
+
+void minal_carriageret(Minal* m)
+{
+    minal_cursor_move(m, 0, m->cursor.row);
 }
 
 void minal_receiver(Minal* m)
@@ -546,7 +637,7 @@ void minal_receiver(Minal* m)
         uint8_t ch = (uint8_t)sv_chop_left(&view);
 
         size_t x   = m->cursor.col;
-        size_t y   = m->cursor.row;
+        size_t y   = minal_cursor2absol(m);
         size_t idx = line_col2idx(&m->display.items[y], x);
 
         if (ch == '\0') {
@@ -558,12 +649,12 @@ void minal_receiver(Minal* m)
         }
 
         if (ch == *LINEFEED) {
-            minal_cursor_move(m, x, y + 1);
+            minal_linefeed(m);
             continue;
         }
 
         if (ch == *CARRIAGERET) {
-            minal_cursor_move(m, 0, y);
+            minal_carriageret(m);
             continue;
         }
 
@@ -572,15 +663,15 @@ void minal_receiver(Minal* m)
         }
 
         if (ch == *BACKSPACE) {
-            if (!(x > 0 || y > 0)) {
+            if (!(x > 0 || m->cursor.row > 0)) {
                 continue;
             }
 
             if (x > 0) {
-                minal_cursor_move(m, x - 1, y);
+                minal_cursor_move(m, x - 1, m->cursor.row);
             } else {
                 size_t last_col = m->config.n_cols - 1;
-                minal_cursor_move(m, last_col, y - 1);
+                minal_cursor_move(m, last_col, m->cursor.row - 1);
             }
 
             continue;
@@ -608,9 +699,9 @@ void minal_receiver(Minal* m)
             utf8code[4] = '\0';
 
             minal_insert_at(m, x, y, (uint8_t*)utf8code);
-
             if (m->cursor.col == m->config.n_cols - 1) {
-                minal_cursor_move(m, 0, m->cursor.row + 1);
+                minal_carriageret(m);
+                minal_linefeed(m);
             } else {
                 minal_cursor_move(m, m->cursor.col + 1, m->cursor.row);
             }
@@ -619,22 +710,22 @@ void minal_receiver(Minal* m)
 
         minal_insert_at(m, x, y, &ch);
         if (m->cursor.col == m->config.n_cols - 1) {
-            minal_cursor_move(m, 0, m->cursor.row + 1);
+            minal_carriageret(m);
+            minal_linefeed(m);
         } else {
             minal_cursor_move(m, m->cursor.col + 1, m->cursor.row);
         }
-
     }
 
     m->display_str.len = 0;
-    for (size_t row = 0; row < m->display.len; row++) {
+    for (size_t row = m->row_offset; row < m->row_offset + m->config.n_rows; row++) {
         Line l = m->display.items[row];
         sb_nconcat(&m->display_str, (char*)l.items, l.len);
         sb_append(&m->display_str, '\n');
     }
 
     TTF_SetTextString(m->text, m->display_str.data, m->display_str.len);
-    SDL_SetRenderDrawColor(m->rend, m->fg_color.r, m->fg_color.r, m->fg_color.r, m->fg_color.a);
+    TTF_SetTextColor(m->text, m->fg_color.r, m->fg_color.r, m->fg_color.r, m->fg_color.a);
     TTF_DrawRendererText(m->text, 0, 0);
 }
 

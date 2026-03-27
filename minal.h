@@ -34,7 +34,7 @@
 #include "carrlib/vec.h"
 
 #define FONT_FILE "resources/font.ttf"
-#define DEFAULT_FONT_SIZE   20.0f
+#define DEFAULT_FONT_SIZE   18.0f
 #define DEFAULT_DISPLAY_DPI 96
 #define DEFAULT_N_COLS      80
 #define DEFAULT_N_ROWS      24
@@ -79,6 +79,8 @@ typedef struct {
     Config          config;
     bool            run;
 
+    size_t          row_offset;
+
     SDL_Color       fg_color;
     SDL_Color       bg_color;
     SDL_Window*     window;
@@ -106,10 +108,15 @@ void        minal_run(Minal* m);
 void        minal_parse_ansi(Minal* m, StringView* bytes);
 void        minal_erase_in_line(Minal* m, size_t opt);
 void        minal_erase_in_display(Minal* m, size_t opt);
+void        minal_pageup(Minal* m, size_t opt);
+void        minal_pagedown(Minal* m, size_t opt);
+void        minal_linefeed(Minal* m);
+void        minal_carriageret(Minal* m);
 
 // cursor 
 SDL_FRect   minal_cursor_to_rect(Minal* m);
 void        minal_cursor_move(Minal* m, int new_col, int new_row);
+size_t      minal_cursor2absol(Minal* m);
 
 // write to subprocess's stdin
 void        minal_write_str(Minal* m, const char* s);
@@ -125,6 +132,7 @@ uint8_t     minal_at(Minal *m, size_t col, size_t row);
 void        minal_insert_at(Minal* m, size_t col, size_t row, uint8_t* c);
 
 // line
+Line        minal_line_alloc(Minal* m);
 void        line_grow(Line* l);
 size_t      line_col2idx(Line* l, size_t col);
 void        line_printf(Line* l);
