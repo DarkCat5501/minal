@@ -11,6 +11,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/param.h>
+#include <sys/wait.h>
 #include <unistd.h>
 #include <utmp.h>
 
@@ -39,6 +40,8 @@
 #define DEFAULT_N_ROWS      24
 
 #define FPS    60
+
+extern char **environ;
 
 typedef struct {
     TTF_Font* font;
@@ -85,6 +88,7 @@ typedef struct {
     TTF_Text*       text;
 
     size_t          input_start;
+    pid_t           shell_pid;
     int             slave_fd;
     int             master_fd;
 
@@ -94,6 +98,7 @@ typedef struct {
 // basic stuff
 Minal       minal_init();
 void        minal_spawn_shell(Minal* m);
+void        minal_check_shell(Minal *m);
 void        minal_finish(Minal *m);
 void        minal_run(Minal* m);
 

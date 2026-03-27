@@ -20,9 +20,7 @@ size_t utf8_chrlen(char ch)
     return size == 0 ? 1 : size;
 }
 
-
-void minal_spawn_shell(Minal* m)
-{
+void minal_spawn_shell(Minal *m) {
     int master_fd;
     int slave_fd;
     if (openpty(&master_fd, &slave_fd, NULL, NULL, NULL) == -1) {
@@ -30,45 +28,53 @@ void minal_spawn_shell(Minal* m)
         exit(1);
     };
 
-    if (fork() == 0) {
+    m->shell_pid = fork();
+    if (m->shell_pid == 0) {
         login_tty(slave_fd);
         char cols[50];
         char rows[50];
-        char patharg[1024];
-        char* pathvar = getenv("PATH");
-        if (pathvar == NULL) {
-            printf("ERROR: failed to get 'PATH' envvar\n");
-            exit(1);
-        }
+        char *path = "/usr/bin/bash";
+        char *defaultshell = getenv("SHELL");
+        // if (defaultshell != NULL)
+        //     path = defaultshell;
+        setenv("SHELL", path, true);
+        setenv("TERM", "vt100", true);
+        // setenv("TERM", "xterm", true);
+        // setenv("TERM", "dumb", true);
+        setenv("PS1",  "$ ", true);
 
-        sprintf(patharg, "PATH=%s", pathvar);
-        sprintf(cols, "COLUMNS=%d,", m->config.n_cols);
-        sprintf(rows, "LINES=%d,", m->config.n_rows);
-        char* env[] = {
-            "TERM=vt100",
-            // "TERM=xterm-256color",
-            // "TERM=xterm",
-            // "TERM=dumb",
-            "PS1=$ ",
-            // "COLUMNS=999999",
-            cols,
-            rows,
-            patharg,
-            "LANG=en_US.UTF-8",
-            NULL,
-        };
-        char* path = "/bin/bash";
-        char* argv[] = { path, NULL };
-        if (execve(path, argv, env) == -1) {
+        sprintf(cols, "%d", m->config.n_cols);
+        sprintf(rows, "%d", m->config.n_rows);
+        setenv("COLUMNS", cols, true);
+        setenv("LINES",   rows, true);
+
+
+        char *argv[] = {path, NULL};
+        if (execve(path, argv, environ) == -1) {
             printf("ERROR: execv: %s\n", strerror(errno));
             exit(1);
         };
         usleep(2000);
         exit(0);
     }
-
     m->master_fd = master_fd;
-    m->slave_fd  = slave_fd;
+    m->slave_fd = slave_fd;
+}
+
+void minal_check_shell(Minal *m) {
+    int status;
+    pid_t result = waitpid(m->shell_pid, &status, WNOHANG);
+    if (result == 0) return;
+
+    if (result == m->shell_pid) {
+        if (WIFEXITED(status)) {
+          printf("Shell exited with code %d\n", WEXITSTATUS(status));
+          m->run = false;
+        } else if (WIFSIGNALED(status)) {
+            printf("Shell signaled with %d\n", WTERMSIG(status));
+            m->run = false;
+        }
+    }
 }
 
 Minal minal_init()
@@ -264,7 +270,6 @@ void minal_parse_ansi(Minal* m, StringView* bytes)
         }
     }
 }
-
 
 SDL_FRect minal_cursor_to_rect(Minal* m)
 {
@@ -685,6 +690,8 @@ void minal_run(Minal* m)
         SDL_RenderPresent(m->rend);
 
         SDL_Delay(1000 / FPS);
+
+        minal_check_shell(m);
     }
 }
 
@@ -707,6 +714,9 @@ void minal_finish(Minal *m)
 
     TTF_Quit();
     SDL_Quit();
+
+    close(m->master_fd);
+    close(m->slave_fd);
 }
 
 
