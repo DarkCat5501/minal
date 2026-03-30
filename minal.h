@@ -17,15 +17,22 @@
 
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_events.h>
-#include <SDL3/SDL_keycode.h>
 #include <SDL3/SDL_keyboard.h>
+#include <SDL3/SDL_keycode.h>
 #include <SDL3/SDL_render.h>
 #include <SDL3/SDL_surface.h>
 #include <SDL3/SDL_timer.h>
 #include <SDL3_ttf/SDL_ttf.h>
 
+#define Kib 1024
+#define Mib (Kib * Kib)
+#define Gib (Kib * Kib * Kib)
 
-#define _32K 32678
+#define Kb 1000
+#define Mb (Kb * Kb)
+#define Gb (Kb * Kb * Kb)
+
+#define _32K 32 * Kb
 
 #define CARR_SB_INIT_CAP _32K
 #define CARR_SV_IMPLEMENTATION
@@ -34,150 +41,198 @@
 #include "carrlib/vec.h"
 
 #define FONT_FILE "resources/font.ttf"
-#define DEFAULT_FONT_SIZE   10.0f
+#define DEFAULT_FONT_SIZE 10.0f
 #define DEFAULT_DISPLAY_DPI 96
-#define DEFAULT_N_COLS      80
-#define DEFAULT_N_ROWS      24
+#define DEFAULT_N_COLS 80
+#define DEFAULT_N_ROWS 24
 
-#define FPS    60
+#define FPS 60
 
-typedef struct {
-    TTF_Font* font;
-    float     font_size;
-    int       display_dpi;
-    int       n_cols;
-    int       n_rows;
-    int       cell_height;
-    int       cell_width;
-    int       window_width;
-    int       window_height;
+typedef struct
+{
+  TTF_Font* font;
+  float font_size;
+  int display_dpi;
+  int cell_height;
+  int cell_width;
 } Config;
 
-typedef struct {
-    size_t row;
-    size_t col;
+typedef struct
+{
+  size_t row, col;
 } Cursor;
 
-typedef struct {
-    uint8_t* items;
-    size_t   len;
-    size_t   cap;
+#define ArrayMeta                                                              \
+  struct                                                                       \
+  {                                                                            \
+    size_t len, cap;                                                           \
+  }
+
+typedef struct
+{
+  uint8_t* items;
+  size_t utf_len;
+  ArrayMeta;
 } Line;
 
-typedef struct {
-    Line*  items;
-    size_t len;
-    size_t cap;
-} Display;
+typedef union
+{
+  SDL_Color rgba;
+  uint32_t hex;
+} Color;
 
-typedef struct {
-    Display         display;
-    StringBuilder   display_str;
-    Cursor          cursor;
-    Config          config;
-    bool            run;
+typedef union
+{
+  struct
+  {
+    Color bg,fg;
+    Color c[16];
+  };
+  Color colors[34];
+} ColorPalette;
 
-    SDL_Color       fg_color;
-    SDL_Color       bg_color;
-    SDL_Window*     window;
-    SDL_Renderer*   rend;
+typedef struct
+{
+  // SDL_FRect position;
+  // SDL_FRect margin;
+  // SDL_FRect padding;
+  // SDL_FRect border;
+  // Color border_color;
 
-    TTF_TextEngine* text_engine;
-    TTF_Text*       text;
+  ColorPalette palett;
+  // int z_index;       // TODO: implement z-index
 
-    size_t          input_start;
-    pid_t           shell_pid;
-    int             slave_fd;
-    int             master_fd;
+  // bool float: 1;
+  // bool relative_position : 1;
+  // bool no_scroll : 1;
+  // bool no_wrap : 1;
+} BufferConfig;
 
-    bool            bracket_mode;
+typedef struct
+{
+  BufferConfig config;
+
+  // calculated
+  SDL_FPoint  _scroll;
+  SDL_FRect   _rect;
+  Cursor      _cursor_max;
+  bool visible: 1;
+  // data
+  Line*       items;
+  ArrayMeta;
+} MinalBuffer;
+typedef struct
+{
+  MinalBuffer* items;
+  ArrayMeta;
+} MinalBufferList;
+
+typedef struct
+{
+  MinalBufferList buffers;
+  size_t buffer_idx;
+  Cursor cursor;
+
+  Config config;
+  bool run;
+
+  SDL_Window* window;
+  SDL_Renderer* rend;
+  SDL_Rect window_rect;
+
+  TTF_TextEngine* text_engine;
+  TTF_Text* text;
+
+  size_t input_start;
+  pid_t shell_pid;
+  int slave_fd;
+  int master_fd;
+
+  bool bracket_mode;
 } Minal;
 
 // basic stuff
-Minal       minal_init();
-void        minal_spawn_shell(Minal* m);
-void        minal_finish(Minal *m);
-void        minal_run(Minal* m);
+Minal minal_init();
+void minal_spawn_shell(Minal* m);
+void minal_finish(Minal* m);
+void minal_run(Minal* m);
 
-//ansi escape sequences commands
-void        minal_parse_ansi(Minal* m, StringView* bytes);
-void        minal_erase_in_line(Minal* m, size_t opt);
-void        minal_erase_in_display(Minal* m, size_t opt);
+// ansi escape sequences commands
+void minal_parse_ansi(Minal* m, StringView* bytes);
+void minal_erase_in_line(Minal* m, size_t opt);
+void minal_erase_in_display(Minal* m, size_t opt);
 
-// cursor 
-SDL_FRect   minal_cursor_to_rect(Minal* m);
-void        minal_cursor_move(Minal* m, int new_col, int new_row);
+// cursor
+SDL_FRect minal_cursor_to_rect(Minal* m);
+void minal_cursor_move(Minal* m, int new_col, int new_row);
 
 // write to subprocess's stdin
-void        minal_write_str(Minal* m, const char* s);
-void        minal_write_char(Minal* m, int c);
-void        minal_transmitter(Minal* m, SDL_Event* event);
+void minal_write_str(Minal* m, const char* s);
+void minal_write_char(Minal* m, int c);
+void minal_transmitter(Minal* m);
 
 // read from subprocess's stdout and render it
-int         minal_read_nonblock(Minal* m, char* buf, size_t n);
-void        minal_receiver(Minal* m);
+int minal_read_nonblock(Minal* m, char* buf, size_t n);
+void minal_receiver(Minal* m);
 
 // read/write
-uint8_t     minal_at(Minal *m, size_t col, size_t row);
-void        minal_insert_at(Minal* m, size_t col, size_t row, uint8_t* c);
+uint8_t minal_at(Minal* m, size_t col, size_t row);
+void minal_insert_at(Minal* m, size_t col, size_t row, uint8_t* c);
 
 // line
-void        line_grow(Line* l);
-size_t      line_col2idx(Line* l, size_t col);
-void        line_printf(Line* l);
+void line_grow(Line* l);
+size_t line_col2idx(Line* l, size_t col);
+void line_printf(Line* l);
 
 // helpers
 const char* SDLK_to_ansicode(SDL_Keycode key);
-bool        is_utf8_head(uint8_t ch);
-size_t      utf8_chrlen(char ch);
-
 
 // ASCII CODES (C0 control codes)
-#define BELL        "\x07"
-#define BACKSPACE   "\x08"
-#define TAB         "\x09"
-#define LINEFEED    "\x0A"
-#define VERTTAB     "\x0B"
-#define FORMFEED    "\x0C"
-#define CARRIAGERET "\x0D"
-#define ESC         "\x1B"
-#define DEL         "\x7F"
+#define BELL 0x07
+#define BACKSPACE 0x08
+#define TAB 0x09
+#define LINEFEED 0x0A
+#define VERTTAB 0x0B
+#define FORMFEED 0x0C
+#define CARRIAGERET 0x0D
+#define ESC 0x1B
+#define DEL 0x7F
 
 // C1 control codes                 ESC+
-#define SINGLE_SHIFT_TWO            "\x8E"
-#define SINGLE_SHIFT_THREE          "\x8F"
-#define DEVICE_CONTROL_STRING       "\x90"
+#define SINGLE_SHIFT_TWO "\x8E"
+#define SINGLE_SHIFT_THREE "\x8F"
+#define DEVICE_CONTROL_STRING "\x90"
 #define CONTROL_SEQUENCE_INTRODUCER '['
-#define STRING_TERMINATOR           "\x9C"
-#define OPERATING_SYSTEM_COMMAND    "\x9D"
-#define START_OF_STRING             "\x98"
-#define PRIVACY_MESSAGE             "\x9E"
+#define STRING_TERMINATOR "\x9C"
+#define OPERATING_SYSTEM_COMMAND "\x9D"
+#define START_OF_STRING "\x98"
+#define PRIVACY_MESSAGE "\x9E"
 #define APPLICATION_PROGRAM_COMMAND "\x9F"
 
 // CSI commands                     Code       Usage
-#define CURSOR_UP                    'A'    // CSI n A 	
-#define CURSOR_DOWN                  'B'    // CSI n B 	
-#define CURSOR_FORWARD               'C'    // CSI n C 	
-#define CURSOR_BACK                  'D'    // CSI n D 	
-#define CURSOR_NEXT_LINE             'E'    // CSI n E 	
-#define CURSOR_PREVIOUS_LINE         'F'    // CSI n F 	
-#define CURSOR_HORIZONTAL_ABSOLUTE   'G'    // CSI n G 	
-#define CURSOR_POSITION              'H'    // CSI n ; m H 
-#define ERASE_IN_DISPLAY             'J'    // CSI n J 	
-#define ERASE_IN_LINE                'K'    // CSI n K 	
-#define SCROLL_UP                    'S'    // CSI n S 	
-#define SCROLL_DOWN                  'T'    // CSI n T 	
-#define HORIZONTAL_VERTICAL_POSITION 'f'    // CSI n ; m f 
-#define SELECT_GRAPHIC_RENDITION     'm'    // CSI n m 	
-#define AUX_PORT_ON                  "5i"   // CSI 5i 		
-#define AUX_PORT_OFF                 "4i"   // CSI 4i 		
-#define DEVICE_STATUS_REPORT         "6n"   // CSI 6n 	    
+#define CURSOR_UP 'A'                    // CSI n A
+#define CURSOR_DOWN 'B'                  // CSI n B
+#define CURSOR_FORWARD 'C'               // CSI n C
+#define CURSOR_BACK 'D'                  // CSI n D
+#define CURSOR_NEXT_LINE 'E'             // CSI n E
+#define CURSOR_PREVIOUS_LINE 'F'         // CSI n F
+#define CURSOR_HORIZONTAL_ABSOLUTE 'G'   // CSI n G
+#define CURSOR_POSITION 'H'              // CSI n ; m H
+#define ERASE_IN_DISPLAY 'J'             // CSI n J
+#define ERASE_IN_LINE 'K'                // CSI n K
+#define SCROLL_UP 'S'                    // CSI n S
+#define SCROLL_DOWN 'T'                  // CSI n T
+#define HORIZONTAL_VERTICAL_POSITION 'f' // CSI n ; m f
+#define SELECT_GRAPHIC_RENDITION 'm'     // CSI n m
+#define AUX_PORT_ON "5i"                 // CSI 5i
+#define AUX_PORT_OFF "4i"                // CSI 4i
+#define DEVICE_STATUS_REPORT "6n"        // CSI 6n
 
 // ANSI ESCAPE CODES
-//#define MOVE_UP    ESC"[A"
-//#define MOVE_DOWN  ESC"[B"
-//#define MOVE_RIGHT ESC"[C"
-//#define MOVE_LEFT  ESC"[D"
-//#define MOVE_LEFT  ESC"[K"
+// #define MOVE_UP    ESC"[A"
+// #define MOVE_DOWN  ESC"[B"
+// #define MOVE_RIGHT ESC"[C"
+// #define MOVE_LEFT  ESC"[D"
+// #define MOVE_LEFT  ESC"[K"
 
 #endif // MINAL_H_
