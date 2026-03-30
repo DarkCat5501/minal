@@ -114,6 +114,7 @@ typedef struct
 
   // calculated
   SDL_FPoint  _scroll;
+  int      _scroll_line;
   SDL_FRect   _rect;
   Cursor      _cursor_max;
   bool visible: 1;
