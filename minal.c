@@ -63,26 +63,38 @@ void minal_spawn_shell(Minal *m) {
 
 void minal_kill_shell(Minal* m)
 {
-    // TODO: handle the killing correctly when bash kills itself 
-    //       via the 'exit' command
-    int err = kill(m->shell_pid, SIGINT);
+    if (m->shell_pid == -1) {
+        return;
+    }
+
+    int err = kill(m->shell_pid, 0);
+    if (err != 0) {
+        printf("ERROR: cant send signal to shell process: %s\n", strerror(errno));
+        return;
+    }
+
+    err = kill(m->shell_pid, SIGHUP);
     if (err == -1) {
         printf("ERROR: kill shell failed: %s\n", strerror(errno));
+        return;
     }
+    minal_check_shell(m);
 }
 
 void minal_check_shell(Minal *m) {
     int status;
     pid_t result = waitpid(m->shell_pid, &status, WNOHANG);
+    if (result == -1) {
+        printf("ERROR: check shell: waitpid: %s\n", strerror(errno));
+        return;
+    }
+
     if (result == 0) return;
 
     if (result == m->shell_pid) {
-        if (WIFEXITED(status)) {
-          printf("Shell exited with code %d\n", WEXITSTATUS(status));
-          m->run = false;
-        } else if (WIFSIGNALED(status)) {
-            printf("Shell signaled with %d\n", WTERMSIG(status));
+        if (WIFEXITED(status) || WIFSIGNALED(status)) {
             m->run = false;
+            m->shell_pid = -1;
         }
     }
 }
