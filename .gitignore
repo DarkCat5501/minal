@@ -1,2 +1,5 @@
-pad
+/build
+app
 minal
+compile_commands.json
+/.cache

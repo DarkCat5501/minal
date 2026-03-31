@@ -68,18 +68,15 @@ typedef struct
     size_t len, cap;                                                           \
   }
 
-typedef struct
-{
-  uint8_t* items;
-  size_t utf_len;
-  ArrayMeta;
-} Line;
 
 typedef union
 {
   SDL_Color rgba;
   uint32_t hex;
 } Color;
+
+typedef struct { Color fg, bg; size_t start; } Range;
+typedef struct { uint32_t* items; ArrayMeta; } Line;
 
 typedef union
 {

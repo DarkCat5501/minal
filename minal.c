@@ -4,20 +4,19 @@
 
 extern char** environ;
 
-void minal_default_color_palett(ColorPalette* palette)
-{
-  palette->bg.rgba = (SDL_Color){ 0x1d, 0x1d, 0x1d, 0xff };
-  palette->fg.rgba = (SDL_Color){ 0xfa, 0xfa, 0xfa, 0xff };
-  palette->c[0].rgba = (SDL_Color){ 0x00, 0x00, 0x00, 0xff };  // Black
-  palette->c[1].rgba = (SDL_Color){ 0x7f, 0x00, 0x00, 0xff };  // Red
-  palette->c[2].rgba = (SDL_Color){ 0x00, 0x7f, 0x00, 0xff };  // Green
-  palette->c[3].rgba = (SDL_Color){ 0x7f, 0x7f, 0x00, 0xff };  // Yellow
-  palette->c[4].rgba = (SDL_Color){ 0x00, 0x00, 0x7f, 0xff };  // Blue
-  palette->c[5].rgba = (SDL_Color){ 0x7f, 0x00, 0x7f, 0xff };  // Magenta
-  palette->c[6].rgba = (SDL_Color){ 0x00, 0x7f, 0x7f, 0xff };  // Cyan
-  palette->c[7].rgba = (SDL_Color){ 0x7f, 0x7f, 0x7f, 0xff };  // Gray
-  palette->c[8].rgba = (SDL_Color){ 0x33, 0x33, 0x33, 0xff };  // Dark Gray
-  palette->c[9].rgba = (SDL_Color){ 0xff, 0x00, 0x00, 0xff };  // Bright Red
+void minal_default_color_palett(ColorPalette* palette) {
+  palette->bg.rgba    = (SDL_Color){ 0x1d, 0x1d, 0x1d, 0xff };
+  palette->fg.rgba    = (SDL_Color){ 0xfa, 0xfa, 0xfa, 0xff };
+  palette->c[0].rgba  = (SDL_Color){ 0x00, 0x00, 0x00, 0xff }; // Black
+  palette->c[1].rgba  = (SDL_Color){ 0x7f, 0x00, 0x00, 0xff }; // Red
+  palette->c[2].rgba  = (SDL_Color){ 0x00, 0x7f, 0x00, 0xff }; // Green
+  palette->c[3].rgba  = (SDL_Color){ 0x7f, 0x7f, 0x00, 0xff }; // Yellow
+  palette->c[4].rgba  = (SDL_Color){ 0x00, 0x00, 0x7f, 0xff }; // Blue
+  palette->c[5].rgba  = (SDL_Color){ 0x7f, 0x00, 0x7f, 0xff }; // Magenta
+  palette->c[6].rgba  = (SDL_Color){ 0x00, 0x7f, 0x7f, 0xff }; // Cyan
+  palette->c[7].rgba  = (SDL_Color){ 0x7f, 0x7f, 0x7f, 0xff }; // Gray
+  palette->c[8].rgba  = (SDL_Color){ 0x33, 0x33, 0x33, 0xff }; // Dark Gray
+  palette->c[9].rgba  = (SDL_Color){ 0xff, 0x00, 0x00, 0xff }; // Bright Red
   palette->c[10].rgba = (SDL_Color){ 0x00, 0xff, 0x00, 0xff }; // Bright Green
   palette->c[11].rgba = (SDL_Color){ 0xff, 0xff, 0x00, 0xff }; // Bright Yellow
   palette->c[12].rgba = (SDL_Color){ 0x00, 0x00, 0xff, 0xff }; // Bright Blue
@@ -26,81 +25,65 @@ void minal_default_color_palett(ColorPalette* palette)
   palette->c[15].rgba = (SDL_Color){ 0xff, 0xff, 0xff, 0xff }; // Bright White
 }
 
-void minal_buffer_resize(Minal* m, MinalBuffer* buffer)
-{
-  buffer->_rect = (SDL_FRect){ .x = 0.f,
-                               .y = 0.f,
-                               .w = (float)m->window_rect.w,
-                               .h = (float)m->window_rect.h };
+void minal_buffer_resize(Minal* m, MinalBuffer* buffer) {
+  buffer->_rect = (SDL_FRect){ .x = 0.f, .y = 0.f, .w = (float)m->window_rect.w, .h = (float)m->window_rect.h };
 
-  buffer->_cursor_max =
-    (Cursor){ .col = m->window_rect.w / m->config.cell_width,
-              .row = m->window_rect.h / m->config.cell_height };
+  buffer->_cursor_max = (Cursor){ .col = m->window_rect.w / m->config.cell_width, .row = m->window_rect.h / m->config.cell_height };
 
   // TODO: implement independent font and resize
 }
 
-void minal_buffer_new(Minal* m)
-{
+void minal_buffer_new(Minal* m) {
   MinalBuffer buffer = { 0 };
-  buffer.visible = false;
+  buffer.visible     = false;
   minal_default_color_palett(&buffer.config.palett);
   vec_append(&m->buffers, buffer);
 }
 
-void minal_buffer_append_line(MinalBuffer* buffer)
-{
+void minal_buffer_append_line(MinalBuffer* buffer) {
   vec_append(buffer, (Line){ 0 });
 }
 // expands the buffer until it has the desired cursor coordinate
-void minal_buffer_expand(MinalBuffer* buffer, Cursor cursor)
-{
+void minal_buffer_expand(MinalBuffer* buffer, Cursor cursor) {
   for (size_t start = buffer->len; start <= cursor.row; start++) {
     minal_buffer_append_line(buffer);
   }
+
   // // TODO: implement UTF8-stride
   // for (size_t start = line->len; start < cursor.col; start++) {
   //   vec_append(line, ' ');
   // }
 }
 
-Line* minal_buffer_get_line(MinalBuffer* buffer, Cursor cursor)
-{
+Line* minal_buffer_get_line(MinalBuffer* buffer, Cursor cursor) {
   assert(cursor.row < buffer->len && "Trying to get a line out of bounds");
 
   return &buffer->items[cursor.row];
 }
 
-void minal_buffer_set_at(MinalBuffer* buffer, Cursor cursor, const char* ch)
-{
+void minal_buffer_set_at(MinalBuffer* buffer, Cursor cursor, const char* ch) {
   minal_buffer_expand(buffer, cursor);
   Line* line = minal_buffer_get_line(buffer, cursor);
   if (!line) {
-    fprintf(
-      stderr, "Failed to insert at position %zux%zu\b", cursor.row, cursor.col);
+    fprintf(stderr, "Failed to insert at position %zux%zu\b", cursor.row, cursor.col);
     return;
   }
 
-  size_t start = utf8_idxn(line->items, line->len, cursor.col);
+  size_t start    = utf8_idxn(line->items, line->len, cursor.col);
   size_t byte_len = strlen(ch);
   if (start != line->len) {
     size_t old_bl = utf8_chrlen(line->items[start]);
 
     if (old_bl > byte_len) {
       size_t diff = old_bl - byte_len;
-      for (size_t i = 0; i < byte_len; i++)
-        line->items[start + i] = ch[i];
-      memmove(
-        &line->items + start + old_bl, &line->items + start + byte_len, diff);
+      for (size_t i = 0; i < byte_len; i++) line->items[start + i] = ch[i];
+      memmove(&line->items + start + old_bl, &line->items + start + byte_len, diff);
     } else if (old_bl == byte_len) {
-      for (size_t i = 0; i < byte_len; i++)
-        line->items[start + i] = ch[i];
+      for (size_t i = 0; i < byte_len; i++) line->items[start + i] = ch[i];
     } else {
       size_t i = 0;
-      for (; i < old_bl; i++)
-        line->items[start + i] = ch[i];
-      for (; i < byte_len; i++)
-        vec_insert(line, ch[i], start + i);
+      for (; i < old_bl; i++) line->items[start + i] = ch[i];
+      for (; i < byte_len; i++) vec_insert(line, ch[i], start + i);
     }
   } else {
     for (size_t i = 0; i < byte_len; i++) {
@@ -109,20 +92,18 @@ void minal_buffer_set_at(MinalBuffer* buffer, Cursor cursor, const char* ch)
   }
 }
 
-MinalBuffer* minal_current_buffer(Minal* m)
-{
+MinalBuffer* minal_current_buffer(Minal* m) {
   assert(m->buffer_idx < m->buffers.len && "Invalid buffer index");
   return &m->buffers.items[m->buffer_idx];
 }
 
-void minal_buffer_auto_scroll(Minal* m)
-{
+void minal_buffer_auto_scroll(Minal* m) {
   MinalBuffer* cbuffer = minal_current_buffer(m);
 
   int height = 0;
   TTF_SetTextWrapWidth(m->text, cbuffer->_rect.w);
   for (size_t i = 0; i < cbuffer->len; i++) {
-    Line* line = &cbuffer->items[i];
+    Line* line  = &cbuffer->items[i];
     int advance = 0;
     if (line->len > 0) {
       TTF_SetTextString(m->text, (char*)line->items, line->len);
@@ -137,17 +118,15 @@ void minal_buffer_auto_scroll(Minal* m)
   }
 }
 
-void minal_buffer_cursor_linefeed(Minal* m)
-{
+void minal_buffer_cursor_linefeed(Minal* m) {
   MinalBuffer* cbuffer = minal_current_buffer(m);
   m->cursor.row++;
   minal_buffer_expand(cbuffer, m->cursor);
 }
 
-void minal_buffer_cursor_advance(Minal* m)
-{
+void minal_buffer_cursor_advance(Minal* m) {
   MinalBuffer* cbuffer = minal_current_buffer(m);
-  Cursor cursor_max = cbuffer->_cursor_max;
+  Cursor cursor_max    = cbuffer->_cursor_max;
 
   // printf("advance max cursor: %d %d\n", cursor_max.col, cursor_max.row);
 
@@ -158,8 +137,7 @@ void minal_buffer_cursor_advance(Minal* m)
     m->cursor.col++;
 }
 
-void minal_spawn_shell(Minal* m)
-{
+void minal_spawn_shell(Minal* m) {
   int master_fd;
   int slave_fd;
   if (openpty(&master_fd, &slave_fd, NULL, NULL, NULL) == -1) {
@@ -196,11 +174,10 @@ void minal_spawn_shell(Minal* m)
     exit(0);
   }
   m->master_fd = master_fd;
-  m->slave_fd = slave_fd;
+  m->slave_fd  = slave_fd;
 }
 
-void minal_check_shell(Minal* m)
-{
+void minal_check_shell(Minal* m) {
   int status;
   pid_t result = waitpid(m->shell_pid, &status, WNOHANG);
   if (result == m->shell_pid) {
@@ -214,12 +191,10 @@ void minal_check_shell(Minal* m)
   }
 }
 
-void minal_resize_font(Minal* m)
-{
+void minal_resize_font(Minal* m) {
   Config* c = &m->config;
   SDL_GetWindowSize(m->window, &m->window_rect.w, &m->window_rect.h);
-  assert(
-    TTF_SetFontSizeDPI(c->font, c->font_size, c->display_dpi, c->display_dpi));
+  assert(TTF_SetFontSizeDPI(c->font, c->font_size, c->display_dpi, c->display_dpi));
   assert(TTF_GetStringSize(c->font, " ", 1, &c->cell_width, &c->cell_height));
 
   for (size_t i = 0; i < m->buffers.len; i++) {
@@ -228,24 +203,22 @@ void minal_resize_font(Minal* m)
   }
 }
 
-Minal minal_init()
-{
+Minal minal_init() {
   Minal m = { 0 };
   SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS);
   assert(TTF_Init());
 
   // default configs
-  m.config.font_size = DEFAULT_FONT_SIZE;
+  m.config.font_size   = DEFAULT_FONT_SIZE;
   m.config.display_dpi = DEFAULT_DISPLAY_DPI;
-  m.window_rect = (SDL_Rect){ .w = 800, .h = 700 };
+  m.window_rect        = (SDL_Rect){ .w = 800, .h = 700 };
 
   minal_spawn_shell(&m);
   m.run = true;
 
   m.config.font = TTF_OpenFont(FONT_FILE, m.config.font_size);
   assert(m.config.font != NULL && "Could not initialize font");
-  m.window = SDL_CreateWindow(
-    "Minal", m.window_rect.w, m.window_rect.h, SDL_WINDOW_RESIZABLE);
+  m.window = SDL_CreateWindow("Minal", m.window_rect.w, m.window_rect.h, SDL_WINDOW_RESIZABLE);
   assert(m.window != NULL && "Could not initialize window");
   m.rend = SDL_CreateRenderer(m.window, NULL);
   SDL_SetRenderVSync(m.rend, 1);
@@ -260,25 +233,21 @@ Minal minal_init()
   return m;
 }
 
-void minal_cursor_move(Minal* m, int new_col, int new_row)
-{
+void minal_cursor_move(Minal* m, int new_col, int new_row) {
   m->cursor.col = new_col;
   m->cursor.row = new_row;
 }
 
-void minal_write_str(Minal* m, const char* s)
-{
+void minal_write_str(Minal* m, const char* s) {
   size_t n = strlen(s);
   write(m->master_fd, s, n);
 }
 
-void minal_write_char(Minal* m, int c)
-{
+void minal_write_char(Minal* m, int c) {
   write(m->master_fd, &c, 1);
 }
 
-int minal_read_nonblock(Minal* m, char* buf, size_t n)
-{
+int minal_read_nonblock(Minal* m, char* buf, size_t n) {
   int oldf = fcntl(m->master_fd, F_GETFL, 0);
   assert(oldf != -1);
   int ret = fcntl(m->master_fd, F_SETFL, oldf | O_NONBLOCK);
@@ -294,8 +263,7 @@ int minal_read_nonblock(Minal* m, char* buf, size_t n)
   return res;
 }
 
-void line_print(Line* line)
-{
+void line_print(Line* line) {
   printf("        Line After: {\n");
   printf("         cap:     %zu,\n", line->cap);
   printf("         len:     %zu,\n", line->len);
@@ -307,8 +275,7 @@ void line_print(Line* line)
   printf("     ]}\n");
 }
 
-void minal_erase_in_line(Minal* m, size_t opt)
-{
+void minal_erase_in_line(Minal* m, size_t opt) {
   // size_t x = m->cursor.col;
   // size_t y = m->cursor.row;
   // Line* line = &m->screen.items[y];
@@ -330,8 +297,7 @@ void minal_erase_in_line(Minal* m, size_t opt)
   // memset(line->items + start, ' ', end - start + 1);
 }
 
-void minal_erase_in_display(Minal* m, size_t opt)
-{
+void minal_erase_in_display(Minal* m, size_t opt) {
   //   size_t x = m->cursor.col;
   //   size_t y = m->cursor.row;
   //
@@ -360,10 +326,9 @@ void minal_erase_in_display(Minal* m, size_t opt)
   //     minal_cursor_move(m, x, y);
 }
 
-void minal_parse_ansi(Minal* m, StringView* bytes)
-{
+void minal_parse_ansi(Minal* m, StringView* bytes) {
   MinalBuffer* cbuffer = minal_current_buffer(m);
-  uint8_t b = sv_chop_left(bytes);
+  uint8_t b            = sv_chop_left(bytes);
   if (b == CONTROL_SEQUENCE_INTRODUCER) {
     b = sv_first(bytes);
 
@@ -400,7 +365,7 @@ void minal_parse_ansi(Minal* m, StringView* bytes)
     }
 
     int argv[10] = { -1 };
-    int argc = 0;
+    int argc     = 0;
 
     while (isdigit(sv_first(bytes))) {
       argv[argc++] = sv_parse_int(bytes);
@@ -414,17 +379,15 @@ void minal_parse_ansi(Minal* m, StringView* bytes)
     switch (b) {
 
       case CURSOR_UP: {
-        int opt = argc > 0 ? argv[0] : 1;
+        int opt        = argc > 0 ? argv[0] : 1;
         size_t new_row = m->cursor.row < opt ? 0 : m->cursor.row - opt;
-        m->cursor.row = new_row;
+        m->cursor.row  = new_row;
       }; break;
 
       case CURSOR_DOWN: {
-        int opt = argc > 0 ? argv[0] : 1;
-        size_t new_row = (m->cursor.row + opt >= cbuffer->len)
-                           ? cbuffer->len - 1
-                           : m->cursor.row + opt;
-        m->cursor.row = new_row;
+        int opt        = argc > 0 ? argv[0] : 1;
+        size_t new_row = (m->cursor.row + opt >= cbuffer->len) ? cbuffer->len - 1 : m->cursor.row + opt;
+        m->cursor.row  = new_row;
       }; break;
 
       case CURSOR_FORWARD: {
@@ -440,9 +403,9 @@ void minal_parse_ansi(Minal* m, StringView* bytes)
       }; break;
 
       case CURSOR_BACK: {
-        int opt = argc > 0 ? argv[0] : 1;
-        size_t new_col = m->cursor.col < opt ? new_col: m->cursor.col - opt;
-        m->cursor.col = new_col;
+        int opt        = argc > 0 ? argv[0] : 1;
+        size_t new_col = m->cursor.col < opt ? new_col : m->cursor.col - opt;
+        m->cursor.col  = new_col;
       }; break;
 
       case CURSOR_POSITION: {
@@ -451,16 +414,16 @@ void minal_parse_ansi(Minal* m, StringView* bytes)
 
         size_t new_col = MIN(MAX(0, opt1 - 1), cbuffer->_cursor_max.col - 1);
         size_t new_row = MIN(MAX(0, opt2 - 1), cbuffer->len - 1);
-        m->cursor.col = new_col;
-        m->cursor.row = new_row;
+        m->cursor.col  = new_col;
+        m->cursor.row  = new_row;
       }; break;
 
       case ERASE_IN_DISPLAY: {
-        for(size_t i=0;i<cbuffer->len;i++) {
-          Line* line = minal_buffer_get_line(cbuffer, (Cursor){ .row = i});
+        for (size_t i = 0; i < cbuffer->len; i++) {
+          Line* line = minal_buffer_get_line(cbuffer, (Cursor){ .row = i });
           vec_free(line);
         }
-        cbuffer->len = 0;
+        cbuffer->len       = 0;
         cbuffer->_scroll.y = 0.0;
       }; break;
 
@@ -476,8 +439,7 @@ void minal_parse_ansi(Minal* m, StringView* bytes)
   }
 }
 
-void minal_receiver(Minal* m)
-{
+void minal_receiver(Minal* m) {
   size_t offset = 0;
   char _buf[_32K];
   while (true) {
@@ -527,7 +489,7 @@ void minal_receiver(Minal* m)
         else if (cursor->row > 0) {
           MinalBuffer* cbuffer = minal_current_buffer(m);
           cursor->row--;
-          Line* line = minal_buffer_get_line(cbuffer, *cursor);
+          Line* line  = minal_buffer_get_line(cbuffer, *cursor);
           cursor->col = utf8_strnlen((const char*)line->items, line->len) - 1;
         }
       } break;
@@ -536,9 +498,9 @@ void minal_receiver(Minal* m)
         continue;
       } break;
       default: {
-        size_t u_len = utf8_chrlen(ch);
+        size_t u_len    = utf8_chrlen(ch);
         uint8_t data[5] = { 0 };
-        size_t utf8cur = 0;
+        size_t utf8cur  = 0;
         for (size_t i = 0; i < u_len; i++) {
           assert(i == 0 || (ch >> 6) == 0b10);
           data[i] = ch;
@@ -556,11 +518,9 @@ void minal_receiver(Minal* m)
   minal_buffer_auto_scroll(m);
 }
 
-void minal_transmitter(Minal* m)
-{
+void minal_transmitter(Minal* m) {
   SDL_Event event;
-  while (SDL_PollEvent(&event))
-    switch (event.type) {
+  while (SDL_PollEvent(&event)) switch (event.type) {
       case SDL_EVENT_MOUSE_WHEEL: {
         MinalBuffer* buffer = minal_current_buffer(m);
         buffer->_scroll.y += event.wheel.y * m->config.cell_height * 1.5;
@@ -592,8 +552,7 @@ void minal_transmitter(Minal* m)
     }
 }
 
-void minal_run(Minal* m)
-{
+void minal_run(Minal* m) {
   assert(SDL_StartTextInput(m->window) && "Could not start text input mode");
   while (m->run) {
     minal_check_shell(m);
@@ -612,7 +571,7 @@ void minal_run(Minal* m)
 
     for (size_t i = 0; i < m->buffers.len; i++) {
       MinalBuffer* buffer = &m->buffers.items[i];
-      SDL_Color bg = buffer->config.palett.bg.rgba;
+      SDL_Color bg        = buffer->config.palett.bg.rgba;
       SDL_SetRenderDrawColor(m->rend, bg.r, bg.g, bg.b, bg.a);
       SDL_RenderFillRect(m->rend, &buffer->_rect);
 
@@ -622,14 +581,21 @@ void minal_run(Minal* m)
       for (size_t line_idx = 0; line_idx < buffer->len; line_idx++) {
         Line* line = &buffer->items[line_idx];
 
+        size_t next_w = 0;
         if (line_idx == m->cursor.row)
           cur.y = next_h;
         if (line->len > 0) {
-          TTF_SetTextString(m->text, (char*)line->items, line->len);
           int tw, th;
-          TTF_GetTextSize(m->text, &tw, &th);
-          TTF_SetTextColor(m->text, 0xfa, 0xfa, 0xfa, 0xff);
-          TTF_DrawRendererText(m->text, 0, next_h);
+          size_t line_u_len = utf8_strnlen(line->items, line->len);
+          for (size_t i = 0; i < line->len; i++) {
+            size_t u_len = utf8_chrlen(line->items[i]);
+            TTF_SetTextString(m->text, &line->items[i], u_len);
+            TTF_GetTextSize(m->text, &tw, &th);
+            float mul = (float)i / (float)line_u_len;
+            TTF_SetTextColor(m->text, 0xfa, 0xfa * mul, 0xfa * mul, 0xff);
+            TTF_DrawRendererText(m->text, next_w, next_h);
+            next_w += tw;
+          }
           next_h += th;
         } else
           next_h += m->config.cell_height;
@@ -641,8 +607,7 @@ void minal_run(Minal* m)
   }
 }
 
-void minal_finish(Minal* m)
-{
+void minal_finish(Minal* m) {
   // for (size_t i = 0; i < m->screen.len; ++i) {
   //   vec_free(&m->screen.items[i]);
   // }
@@ -662,16 +627,14 @@ void minal_finish(Minal* m)
   SDL_Quit();
 }
 
-int main(void)
-{
+int main(void) {
   Minal m = minal_init();
   minal_run(&m);
   minal_finish(&m);
   return 0;
 }
 
-const char* SDLK_to_ansicode(SDL_Keycode key)
-{
+const char* SDLK_to_ansicode(SDL_Keycode key) {
   switch (key) {
     case SDLK_BACKSPACE:
       return "\b";
