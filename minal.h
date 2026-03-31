@@ -208,9 +208,9 @@ size_t      utf8_chrlen(char ch);
 #define SCROLL_DOWN                  'T'    // CSI n T 	
 #define HORIZONTAL_VERTICAL_POSITION 'f'    // CSI n ; m f 
 #define SELECT_GRAPHIC_RENDITION     'm'    // CSI n m 	
-#define AUX_PORT_ON                  "5i"   // CSI 5i 		
-#define AUX_PORT_OFF                 "4i"   // CSI 4i 		
-#define DEVICE_STATUS_REPORT         "6n"   // CSI 6n 	    
+#define AUX_PORT_ON                  'i'    // CSI 5i 		
+#define AUX_PORT_OFF                 'i'    // CSI 4i 		
+#define DEVICE_STATUS_REPORT         'n'    // CSI 6n 	    
 
 // COLORS / GRAPHICS MODE
 #define FG_BLACK 	       30

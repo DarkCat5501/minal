@@ -210,6 +210,7 @@ void minal_parse_ansi(Minal* m, StringView* bytes)
             return;
         }
 
+
         int argv[10] = {-1};
         int argc     = 0;
 
@@ -307,13 +308,29 @@ void minal_parse_ansi(Minal* m, StringView* bytes)
                 minal_graphic_mode(m, argv, argc);
             }; break;
 
+            case DEVICE_STATUS_REPORT: {
+                if (argc < 1 && !(argv[0] == 6 || argv[0] == 5)) {
+                    printf("INVALID CSI ESCAPE SEQUENCE\n");
+                    return;
+                }
+                if (argv[0] == 5) {
+                    minal_write_str(m, "\x1B[0n");
+                }
+
+                // report cursor position as ESC[row;colR
+                char str[50];
+                sprintf(str, "\x1B[%zu;%zuR", m->cursor.row + 1, m->cursor.col + 1);
+                minal_write_str(m, str);
+            }; break;
+
+
             default: {
                 printf("UNKNOW CSI ESCAPE SEQUENCE\n");
                 printf("    OP: %c\n", b);
                 if (argc > 0) {
                     printf("    ARGS: ");
                     for (int i = 0; i < argc; ++i) {
-                        printf("'%d, '", argv[i]);
+                        printf("%d, ", argv[i]);
                     }
                     printf("\n");
                 }

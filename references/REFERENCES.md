@@ -28,3 +28,8 @@
 - SDL:
     - [SDL_GetDisplayDPI deprecated](https://wiki.libsdl.org/SDL3/README-migration#:~:text=SDL%5FGetDisplayDPI%28%29%20%2D%20not%20reliable%20across%20platforms%2C%20approximately%20replaced%20by%20multiplying%20SDL%5FGetWindowDisplayScale%28%29%20times%20160%20on%20iPhone%20and%20Android%2C%20and%2096%20on%20other%20platforms)
     - [DPI Ozone Monitor](https://www.displayspecifications.com/en/model/8639175c#:~:text=108%20ppi%20(pixels%20per%20inch))
+
+- ANSI Escape Codes References:
+    - [Ghostty](https://ghostty.org/docs/vt/reference)
+    - [ANSI Escape Codes](https://en.wikipedia.org/wiki/ANSI_escape_code)
+    - [MS Console Virtual](https://learn.microsoft.com/en-us/windows/console/console-virtual-terminal-sequences)
