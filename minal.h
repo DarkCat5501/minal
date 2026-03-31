@@ -6,6 +6,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <pty.h>
+#include <signal.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -55,7 +56,34 @@ typedef struct {
     int       window_height;
 } Config;
 
+
 typedef struct {
+    bool      bold:      1;
+    bool      faint:     1;
+    bool      italic:    1;
+    bool      underline: 1;
+    bool      blinking:  1;
+    bool      inverse:   1;
+    bool      hidden:    1;
+    bool      strike:    1;
+    SDL_Color fg_color;
+    SDL_Color bg_color;
+} Style;
+
+typedef struct {
+    Style* items;
+    size_t len;
+    size_t cap;
+} LineStyle;
+
+typedef struct {
+    LineStyle* items;
+    size_t     len;
+    size_t     cap;
+} Styles;
+
+typedef struct {
+    Style  style;
     size_t row;
     size_t col;
 } Cursor;
@@ -74,15 +102,14 @@ typedef struct {
 
 typedef struct {
     Display         display;
-    StringBuilder   display_str;
+    Styles          styles;
     Cursor          cursor;
+    Cursor          saved_cursor;
     Config          config;
     bool            run;
 
     size_t          row_offset;
 
-    SDL_Color       fg_color;
-    SDL_Color       bg_color;
     SDL_Window*     window;
     SDL_Renderer*   rend;
 
@@ -112,6 +139,7 @@ void        minal_pageup(Minal* m, size_t opt);
 void        minal_pagedown(Minal* m, size_t opt);
 void        minal_linefeed(Minal* m);
 void        minal_carriageret(Minal* m);
+void        minal_graphic_mode(Minal* m, int* argv, int argc);
 
 // cursor 
 SDL_FRect   minal_cursor_to_rect(Minal* m);
@@ -133,6 +161,7 @@ void        minal_insert_at(Minal* m, size_t col, size_t row, uint8_t* c);
 
 // line
 Line        minal_line_alloc(Minal* m);
+LineStyle   minal_linestyle_alloc(Minal* m);
 void        line_grow(Line* l);
 size_t      line_col2idx(Line* l, size_t col);
 void        line_printf(Line* l);
@@ -141,7 +170,6 @@ void        line_printf(Line* l);
 const char* SDLK_to_ansicode(SDL_Keycode key);
 bool        is_utf8_head(uint8_t ch);
 size_t      utf8_chrlen(char ch);
-
 
 // ASCII CODES (C0 control codes)
 #define BELL        "\x07"
@@ -184,11 +212,76 @@ size_t      utf8_chrlen(char ch);
 #define AUX_PORT_OFF                 "4i"   // CSI 4i 		
 #define DEVICE_STATUS_REPORT         "6n"   // CSI 6n 	    
 
-// ANSI ESCAPE CODES
-//#define MOVE_UP    ESC"[A"
-//#define MOVE_DOWN  ESC"[B"
-//#define MOVE_RIGHT ESC"[C"
-//#define MOVE_LEFT  ESC"[D"
-//#define MOVE_LEFT  ESC"[K"
+// COLORS / GRAPHICS MODE
+#define FG_BLACK 	       30
+#define FG_RED 	           31
+#define FG_GREEN 	       32
+#define FG_YELLOW 	       33
+#define FG_BLUE 	       34
+#define FG_MAGENTA         35
+#define FG_CYAN 	       36
+#define FG_WHITE 	       37
+#define FG_DEFAULT         39
+#define FG_BRIGHT_BLACK    90
+#define FG_BRIGHT_RED 	   91
+#define FG_BRIGHT_GREEN    92
+#define FG_BRIGHT_YELLOW   93
+#define FG_BRIGHT_BLUE 	   94
+#define FG_BRIGHT_MAGENTA  95
+#define FG_BRIGHT_CYAN 	   96
+#define FG_BRIGHT_WHITE    97
+
+#define BG_BLACK 	       40
+#define BG_RED 	           41
+#define BG_GREEN 	       42
+#define BG_YELLOW 	       43
+#define BG_BLUE 	       44
+#define BG_MAGENTA         45
+#define BG_CYAN 	       46
+#define BG_WHITE 	       47
+#define BG_DEFAULT         49
+#define BG_BRIGHT_BLACK    100
+#define BG_BRIGHT_RED 	   101
+#define BG_BRIGHT_GREEN    102
+#define BG_BRIGHT_YELLOW   103
+#define BG_BRIGHT_BLUE     104
+#define BG_BRIGHT_MAGENTA  105
+#define BG_BRIGHT_CYAN     106
+#define BG_BRIGHT_WHITE    107
+
+#define DEFAULT_FG_COLOR WHITE
+#define DEFAULT_BG_COLOR BLACK
+
+const SDL_Color BRIGHT_BLACK    = { .r = 42 , .g = 42 , .b = 42 , .a = 255 };
+const SDL_Color BRIGHT_RED      = { .r = 230, .g = 10 , .b = 10 , .a = 255 };	         
+const SDL_Color BRIGHT_GREEN 	= { .r = 10 , .g = 230, .b = 10 , .a = 255 };
+const SDL_Color BRIGHT_YELLOW 	= { .r = 230, .g = 230, .b = 10 , .a = 255 };
+const SDL_Color BRIGHT_BLUE 	= { .r = 10 , .g = 10 , .b = 230, .a = 255 };
+const SDL_Color BRIGHT_MAGENTA  = { .r = 230, .g = 10 , .b = 230, .a = 255 };
+const SDL_Color BRIGHT_CYAN 	= { .r = 10 , .g = 230, .b = 230, .a = 255 };
+const SDL_Color BRIGHT_WHITE 	= { .r = 230, .g = 230, .b = 230, .a = 255 };
+const SDL_Color DEFAULT         = { .r = 230, .g = 230, .b = 230, .a = 255 };
+const SDL_Color BLACK           = { .r = 0  , .g = 0  , .b = 0  , .a = 255 };
+const SDL_Color RED 	        = { .r = 200, .g = 50 , .b = 50 , .a = 255 };	         
+const SDL_Color GREEN           = { .r = 50 , .g = 200, .b = 50 , .a = 255 };
+const SDL_Color YELLOW          = { .r = 200, .g = 200, .b = 50 , .a = 255 };
+const SDL_Color BLUE            = { .r = 50 , .g = 50 , .b = 200, .a = 255 }; 
+const SDL_Color MAGENTA         = { .r = 200, .g = 50 , .b = 200, .a = 255 };
+const SDL_Color CYAN            = { .r = 50 , .g = 200, .b = 200, .a = 255 }; 
+const SDL_Color WHITE           = { .r = 200, .g = 200, .b = 200, .a = 255 };
+
+const Style DEFAULT_STYLE = {
+    .bold      = false,
+    .faint     = false,
+    .italic    = false,
+    .underline = false,
+    .blinking  = false,
+    .inverse   = false,
+    .hidden    = false,
+    .strike    = false,
+    .fg_color  = DEFAULT_FG_COLOR,
+    .bg_color  = DEFAULT_BG_COLOR,
+};
+
 
 #endif // MINAL_H_

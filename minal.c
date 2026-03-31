@@ -61,6 +61,16 @@ void minal_spawn_shell(Minal *m) {
     m->slave_fd = slave_fd;
 }
 
+void minal_kill_shell(Minal* m)
+{
+    // TODO: handle the killing correctly when bash kills itself 
+    //       via the 'exit' command
+    int err = kill(m->shell_pid, SIGINT);
+    if (err == -1) {
+        printf("ERROR: kill shell failed: %s\n", strerror(errno));
+    }
+}
+
 void minal_check_shell(Minal *m) {
     int status;
     pid_t result = waitpid(m->shell_pid, &status, WNOHANG);
@@ -119,21 +129,22 @@ Minal minal_init()
         Line l = minal_line_alloc(&m);
         vec_append(&display, l);
     }
-    m.display     = display;
-    m.display_str = sb_with_cap(4 * m.config.n_rows * m.config.n_cols);
+    m.display = display;
+    
+    Styles styles = {0};
+    vec_expandto(&styles, m.config.n_rows);
+    for (int i = 0; i < m.config.n_rows; ++i) {
+        LineStyle l = minal_linestyle_alloc(&m);
+        vec_append(&styles, l);
+    }
+    m.styles = styles;
+
     m.row_offset  = 0;
 
-    m.fg_color = (SDL_Color) {
-        .r = 220,
-        .g = 220,
-        .b = 220,
-        .a = 255,
-    };
-    m.bg_color = (SDL_Color) {
-        .r = 0,
-        .g = 0,
-        .b = 0,
-        .a = 255,
+    m.cursor = (Cursor) {
+        .col   = 0,
+        .row   = 0,
+        .style = DEFAULT_STYLE,
     };
 
     return m;
@@ -156,14 +167,11 @@ void minal_parse_ansi(Minal* m, StringView* bytes)
 
             b = sv_chop_left(bytes);
 
-            if (opt == 25) {
-            }
+            if (opt == 25) { }
 
-            if (opt == 1004) {
-            }
+            if (opt == 1004) { }
 
-            if (opt == 1049) {
-            }
+            if (opt == 1049) { }
 
             if (opt == 2004) {
                 if (b == 'h') {
@@ -178,6 +186,18 @@ void minal_parse_ansi(Minal* m, StringView* bytes)
             return;
         }
 
+        if (b == 's') {
+            sv_chop_left(bytes);
+            m->saved_cursor = m->cursor;
+            return;
+        }
+
+        if (b == 'u') {
+            sv_chop_left(bytes);
+            m->cursor = m->saved_cursor;
+            return;
+        }
+
         int argv[10] = {-1};
         int argc     = 0;
 
@@ -188,6 +208,8 @@ void minal_parse_ansi(Minal* m, StringView* bytes)
             };
             sv_chop_left(bytes);
         }
+
+
 
         b = sv_chop_left(bytes);
         switch (b) {
@@ -268,7 +290,24 @@ void minal_parse_ansi(Minal* m, StringView* bytes)
                 size_t opt = argc > 0 ? argv[0] : 1;
                 minal_pagedown(m, opt);
             }; break;
+
+            case SELECT_GRAPHIC_RENDITION: {
+                minal_graphic_mode(m, argv, argc);
+            }; break;
+
+            default: {
+                printf("UNKNOW CSI ESCAPE SEQUENCE\n");
+                printf("    OP: %c\n", b);
+                if (argc > 0) {
+                    printf("    ARGS: ");
+                    for (int i = 0; i < argc; ++i) {
+                        printf("'%d, '", argv[i]);
+                    }
+                    printf("\n");
+                }
+            }; break;
         }
+        return;
     }
 }
 
@@ -323,6 +362,10 @@ void minal_new_line(Minal* m)
 {
     Line new_line = minal_line_alloc(m);
     vec_append(&m->display, new_line);
+
+    LineStyle new_style = minal_linestyle_alloc(m);
+    vec_append(&m->styles, new_style);
+
     m->row_offset++;
 }
 
@@ -344,6 +387,73 @@ void minal_pagedown(Minal* m, size_t opt)
         m->row_offset = m->display.len - m->config.n_rows;
     }
 }
+
+
+void minal_select_color(Minal* m, int op, SDL_Color* clr, bool* isbg)
+{
+    switch (op) {
+         case FG_BLACK:          { *clr = BLACK;          *isbg = false; }; break;
+         case FG_RED:            { *clr = RED;            *isbg = false; }; break;
+         case FG_GREEN:          { *clr = GREEN;          *isbg = false; }; break;
+         case FG_YELLOW:         { *clr = YELLOW;         *isbg = false; }; break;
+         case FG_BLUE:           { *clr = BLUE;           *isbg = false; }; break;
+         case FG_MAGENTA:        { *clr = MAGENTA;        *isbg = false; }; break;
+         case FG_CYAN:           { *clr = CYAN;           *isbg = false; }; break;
+         case FG_WHITE:          { *clr = WHITE;          *isbg = false; }; break;
+         case FG_DEFAULT:        { *clr = DEFAULT;        *isbg = false; }; break;
+         case FG_BRIGHT_BLACK:   { *clr = BRIGHT_BLACK;   *isbg = false; }; break;
+         case FG_BRIGHT_RED:     { *clr = BRIGHT_RED;     *isbg = false; }; break;
+         case FG_BRIGHT_GREEN:   { *clr = BRIGHT_GREEN;   *isbg = false; }; break;
+         case FG_BRIGHT_YELLOW:  { *clr = BRIGHT_YELLOW;  *isbg = false; }; break;
+         case FG_BRIGHT_BLUE:    { *clr = BRIGHT_BLUE;    *isbg = false; }; break;
+         case FG_BRIGHT_MAGENTA: { *clr = BRIGHT_MAGENTA; *isbg = false; }; break;
+         case FG_BRIGHT_CYAN:    { *clr = BRIGHT_CYAN;    *isbg = false; }; break;
+         case FG_BRIGHT_WHITE:   { *clr = BRIGHT_WHITE;   *isbg = false; }; break;
+         case BG_BLACK:          { *clr = BLACK;          *isbg = true;  }; break;
+         case BG_RED:            { *clr = RED;            *isbg = true;  }; break;
+         case BG_GREEN:          { *clr = GREEN;          *isbg = true;  }; break;
+         case BG_YELLOW:         { *clr = YELLOW;         *isbg = true;  }; break;
+         case BG_BLUE:           { *clr = BLUE;           *isbg = true;  }; break;
+         case BG_MAGENTA:        { *clr = MAGENTA;        *isbg = true;  }; break;
+         case BG_CYAN:           { *clr = CYAN;           *isbg = true;  }; break;
+         case BG_WHITE:          { *clr = WHITE;          *isbg = true;  }; break;
+         case BG_DEFAULT:        { *clr = DEFAULT;        *isbg = true;  }; break;
+         case BG_BRIGHT_BLACK:   { *clr = BRIGHT_BLACK;   *isbg = true;  }; break;
+         case BG_BRIGHT_RED:     { *clr = BRIGHT_RED;     *isbg = true;  }; break;
+         case BG_BRIGHT_GREEN:   { *clr = BRIGHT_GREEN;   *isbg = true;  }; break;
+         case BG_BRIGHT_YELLOW:  { *clr = BRIGHT_YELLOW;  *isbg = true;  }; break;
+         case BG_BRIGHT_BLUE:    { *clr = BRIGHT_BLUE;    *isbg = true;  }; break;
+         case BG_BRIGHT_MAGENTA: { *clr = BRIGHT_MAGENTA; *isbg = true;  }; break;
+         case BG_BRIGHT_CYAN:    { *clr = BRIGHT_CYAN;    *isbg = true;  }; break;
+         case BG_BRIGHT_WHITE:   { *clr = BRIGHT_WHITE;   *isbg = true;  }; break;
+    }
+}
+
+void minal_graphic_mode(Minal* m, int* argv, int argc)
+{
+    if (argc == 0) {
+        argv[argc++] = 0;
+    }
+
+    for (int i = 0; i < argc; ++i) {
+        int op = argv[i];
+        if (op == 0) {
+            m->cursor.style.fg_color = DEFAULT_FG_COLOR;
+            m->cursor.style.bg_color = DEFAULT_BG_COLOR;
+            return;
+        }
+
+        SDL_Color clr;
+        bool isbg;
+        minal_select_color(m, op, &clr, &isbg);
+        if (isbg) {
+            m->cursor.style.bg_color = clr;
+        } else {
+            m->cursor.style.fg_color = clr;
+        }
+    }
+}
+
 
 size_t minal_cursor2absol(Minal* m)
 {
@@ -395,10 +505,20 @@ Line minal_line_alloc(Minal* m)
     return l;
 }
 
+LineStyle minal_linestyle_alloc(Minal* m)
+{
+    LineStyle l = {0};
+    vec_expandto(&l, m->config.n_cols);
+    for (int j = 0; j < m->config.n_cols; ++j) {
+        vec_append(&l, DEFAULT_STYLE);
+    }
+    return l;
+}
 
 void line_grow(Line* l)
 {
     vec_grow(l);
+    memset(l->items + l->len, 'B', (l->cap - l->len) * sizeof(*l->items));
     return;
 }
 
@@ -435,6 +555,7 @@ void minal_append(Minal* m, size_t row, char c)
 void minal_insert_at(Minal* m, size_t col, size_t row, uint8_t* c)
 {
     assert(row >= 0 && row < m->display.len);
+    m->styles.items[row].items[col] = m->cursor.style;
     Line* l = &m->display.items[row];
     size_t idx  = line_col2idx(l, col);
     size_t new_size = utf8_chrlen(*c);
@@ -483,7 +604,6 @@ void minal_insert_at(Minal* m, size_t col, size_t row, uint8_t* c)
 
 }
 
-
 void minal_erase_in_line(Minal* m, size_t opt)
 //////////////////////////////////////////////
 //  opt=0                                   //
@@ -508,23 +628,35 @@ void minal_erase_in_line(Minal* m, size_t opt)
     Line* line  = &m->display.items[y];
     size_t start;
     size_t end;
+    size_t start_col;
+    size_t end_col;
+
+    if (line->len == 0) {
+        return;
+    }
 
     switch (opt) {
 
         case 1: {
             start = 0;
-            end = line_col2idx(&m->display.items[y], x);
+            end   = line_col2idx(&m->display.items[y], x);
+            start_col = 0;
+            end_col   = x;
         }; break;
 
         case 2: {
             start = 0;
-            end = line->len - 1;
+            end   = line->len - 1;
+            start_col = 0;
+            end_col   = m->config.n_cols;
         }; break;
 
         case 0:
         default: {
             start = line_col2idx(&m->display.items[y], x);
-            end = line->len - 1;
+            end   = line->len - 1;
+            start_col = x;
+            end_col   = m->config.n_cols;
         }; break;
     }
 
@@ -532,10 +664,22 @@ void minal_erase_in_line(Minal* m, size_t opt)
         size_t tmp = start;
         start = end;
         end = tmp;
+
+        size_t tmpcol = start_col;
+        start_col = end_col;
+        end_col = tmpcol;
+    }
+
+    for (size_t col = start_col; col < end_col; col++) {
+        m->styles.items[y].items[col] = m->cursor.style;
     }
 
     memset(line->items + start, ' ', end - start + 1);
-    line->len -= end - start + 1;
+    if (line->len > end - start + 1) {
+        line->len -= end - start + 1;
+    } else {
+        line->len = 0;
+    }
 }
 
 void minal_erase_in_display(Minal* m, size_t opt)
@@ -616,8 +760,6 @@ void minal_carriageret(Minal* m)
 
 void minal_receiver(Minal* m)
 {
-    SDL_SetRenderDrawColor(m->rend, m->bg_color.r, m->bg_color.g, m->bg_color.b, m->bg_color.a);
-    SDL_RenderClear(m->rend);
 
     size_t offset = 0;
     char _buf[_32K];
@@ -716,17 +858,6 @@ void minal_receiver(Minal* m)
             minal_cursor_move(m, m->cursor.col + 1, m->cursor.row);
         }
     }
-
-    m->display_str.len = 0;
-    for (size_t row = m->row_offset; row < m->row_offset + m->config.n_rows; row++) {
-        Line l = m->display.items[row];
-        sb_nconcat(&m->display_str, (char*)l.items, l.len);
-        sb_append(&m->display_str, '\n');
-    }
-
-    TTF_SetTextString(m->text, m->display_str.data, m->display_str.len);
-    TTF_SetTextColor(m->text, m->fg_color.r, m->fg_color.r, m->fg_color.r, m->fg_color.a);
-    TTF_DrawRendererText(m->text, 0, 0);
 }
 
 void minal_transmitter(Minal* m, SDL_Event* event)
@@ -763,6 +894,43 @@ void minal_transmitter(Minal* m, SDL_Event* event)
     }
 }
 
+void minal_render_text(Minal* m)
+{
+    SDL_Color last_color = DEFAULT_FG_COLOR;
+    float x = 0;
+    float y = 0;
+    TTF_SetTextString(m->text, "", 0);
+    for (size_t row = m->row_offset; row < m->row_offset + m->config.n_rows; row++) {
+        Line l = m->display.items[row];
+        x = 0;
+        for (size_t col = 0; col < m->config.n_cols; col++) {
+            size_t idx = line_col2idx(&l, col);
+            if (idx >= l.len) break;
+            
+            size_t len = utf8_chrlen(l.items[idx]);
+            TTF_SetTextString(m->text, (char*)(l.items + idx), len);
+
+            Style style = m->styles.items[row].items[col];
+            SDL_FRect bg = {
+                .x = x,
+                .y = y,
+                .w = m->config.cell_width,
+                .h = m->config.cell_height,
+            };
+            SDL_SetRenderDrawColor(m->rend, style.bg_color.r, style.bg_color.g, style.bg_color.b, style.bg_color.a);
+            SDL_RenderFillRect(m->rend, &bg);
+
+            TTF_SetTextColor(m->text, style.fg_color.r, style.fg_color.g, style.fg_color.b, style.fg_color.a);
+            TTF_DrawRendererText(m->text, x, y);
+
+            x += m->config.cell_width;
+        }
+        TTF_SetTextString(m->text, "\n", 1);
+        TTF_DrawRendererText(m->text, x, y);
+        y += m->config.cell_height;
+    }
+}
+
 void minal_run(Minal* m)
 {
     assert(SDL_StartTextInput(m->window));
@@ -772,9 +940,13 @@ void minal_run(Minal* m)
             minal_transmitter(m, &event);
         }
 
-        minal_receiver(m);
+        SDL_SetRenderDrawColor(m->rend, DEFAULT_STYLE.bg_color.r, DEFAULT_STYLE.bg_color.g, DEFAULT_STYLE.bg_color.b, DEFAULT_STYLE.bg_color.a);
+        SDL_RenderClear(m->rend);
 
-        SDL_SetRenderDrawColor(m->rend, m->fg_color.r, m->fg_color.g, m->fg_color.b, m->fg_color.a);
+        minal_receiver(m);
+        minal_render_text(m);
+
+        SDL_SetRenderDrawColor(m->rend, m->cursor.style.fg_color.r, m->cursor.style.fg_color.g, m->cursor.style.fg_color.b, m->cursor.style.fg_color.a);
         SDL_FRect cur = minal_cursor_to_rect(m);
         SDL_RenderFillRect(m->rend, &cur);
 
@@ -792,7 +964,11 @@ void minal_finish(Minal *m)
         vec_free(&m->display.items[i]);
     }
     vec_free(&m->display);
-    sb_free(&m->display_str);
+
+    for (size_t i = 0; i < m->styles.len; ++i) {
+        vec_free(&m->styles.items[i]);
+    }
+    vec_free(&m->styles);
 
     assert(SDL_StopTextInput(m->window));
     TTF_CloseFont(m->config.font);
@@ -805,6 +981,8 @@ void minal_finish(Minal *m)
 
     TTF_Quit();
     SDL_Quit();
+
+    minal_kill_shell(m);
 
     close(m->master_fd);
     close(m->slave_fd);
