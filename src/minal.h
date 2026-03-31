@@ -76,7 +76,7 @@ typedef union
 } Color;
 
 typedef struct { Color fg, bg; size_t start; } Range;
-typedef struct { uint32_t* items; ArrayMeta; } Line;
+typedef struct { char* items; ArrayMeta; } Line;
 
 typedef union
 {

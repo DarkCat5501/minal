@@ -47,5 +47,7 @@ run: app
 	@./app
 
 watch:
-	@echo "Makefile ${ALL_DEPS}" | sed -e "s/^ +/ /" | tr -s ' ' '\n' | sort -u | entr -c -r make --no-print-directory run
+	@echo "Makefile ${ALL_DEPS}" | sed -e "s/^ +/ /" | tr -s ' ' '\n' | sort -u | entr -c -r make --no-print-directory app
 
+watch-run:
+	@echo "Makefile ${ALL_DEPS}" | sed -e "s/^ +/ /" | tr -s ' ' '\n' | sort -u | entr -c -r make --no-print-directory run
