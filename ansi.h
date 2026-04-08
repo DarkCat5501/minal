@@ -766,13 +766,13 @@ SOFTWARE.
 //    } DEC_PRIVATE_MODE_RESET (DECRST)
 //    { QUERY_MODIFIER_KEYS (QMK) 
 #define QUERY_MODIFIER_KEYS                'm'  // ESC CSI ? _ m                          | Query key modifier options (XTQMODKEYS), xterm.
-#define QMK_MOD_KEYBOARD                    0   //                                        | modifyKeyboard.
-#define QMK_CURSOR_KEYS                     1   //                                        | modifyCursorKeys.
-#define QMK_FUNCTION_KEYS                   2   //                                        | modifyFunctionKeys.
-#define QMK_KEYPAD_KEYS                     3   //                                        | modifyKeypadKeys.
-#define QMK_OTHER_KEYS                      4   //                                        | modifyOtherKeys.
-#define QMK_MODIFIER_KEYS                   6   //                                        | modifyModifierKeys.
-#define QMK_SPECIAL_KEYS                    7   //                                        | modifySpecialKeys.
+#define QMK_MOD_KEYBOARD                    0   // ESC CSI ? 0 m                          | modifyKeyboard.
+#define QMK_CURSOR_KEYS                     1   // ESC CSI ? 1 m                          | modifyCursorKeys.
+#define QMK_FUNCTION_KEYS                   2   // ESC CSI ? 2 m                          | modifyFunctionKeys.
+#define QMK_KEYPAD_KEYS                     3   // ESC CSI ? 3 m                          | modifyKeypadKeys.
+#define QMK_OTHER_KEYS                      4   // ESC CSI ? 4 m                          | modifyOtherKeys.
+#define QMK_MODIFIER_KEYS                   6   // ESC CSI ? 6 m                          | modifyModifierKeys.
+#define QMK_SPECIAL_KEYS                    7   // ESC CSI ? 7 m                          | modifySpecialKeys.
 //    } QUERY_MODIFIER_KEYS (QMK) 
 //    { DEC_DEVICE_STATUS_REPORT (DEC_DSR)
 #define DEC_DEVICE_STATUS_REPORT           'n'  // ESC CSI ? __ n                         | Device Status Report (DSR, DEC-specific).
@@ -923,10 +923,10 @@ SOFTWARE.
 #define DECSCL_8BIT_CONTROLS_2               2  // ESC CSI __ ; 2 " p                      | 8-bit controls.
 //    } DEC_SET_CONFORMACE_LEVEL (DECSCL)
 //    { SELECT_CHAR_PROTECTION_ATTRIBUTE (DECSCA)
-#define SELECT_CHAR_PROTECTION_ATTRIBUTE        // ESC CSI _ " q                           | Select character protection attribute (DECSCA), VT220.
-#define DECSCA_DECSED_DECSEL_CAN_ERASE          // ESC CSI 0 " q                           | DECSED and DECSEL can erase (default).
-#define DECSCA_DECSED_DECSEL_CANT_ERASE         // ESC CSI 1 " q                           | DECSED and DECSEL cannot erase.
-#define DECSCA_DECSED_DECSEL_CAN_ERASE_2        // ESC CSI 2 " q                           | DECSED and DECSEL can erase.
+#define SELECT_CHAR_PROTECTION_ATTRIBUTE   'q'  // ESC CSI _ " q                           | Select character protection attribute (DECSCA), VT220.
+#define DECSCA_DECSED_DECSEL_CAN_ERASE      0   // ESC CSI 0 " q                           | DECSED and DECSEL can erase (default).
+#define DECSCA_DECSED_DECSEL_CANT_ERASE     1   // ESC CSI 1 " q                           | DECSED and DECSEL cannot erase.
+#define DECSCA_DECSED_DECSEL_CAN_ERASE_2    2   // ESC CSI 2 " q                           | DECSED and DECSEL can erase.
 //    } SELECT_CHAR_PROTECTION_ATTRIBUTE (DECSCA)
 #define REQUEST_DISPLAYED_EXTENT           'v'  // ESC CSI " v                             | Request Displayed Extent (DECRQDE), VT340, VT420.
 // } END FORMAT: ESC CSI <n>* " <op>
@@ -1093,3 +1093,4 @@ SOFTWARE.
 #define STP_SET_ICON_TO_FILE        'I'       // ESC OSC  I ; c                           | Set icon to file.
 #define STP_SET_WINDOW_TITLE        'l'       // ESC OSC  l ; c                           | Set window title.
 #define STP_SET_ICON_LABEL          'L'       // ESC OSC  L ; c                           | Set icon label.
+
