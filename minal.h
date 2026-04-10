@@ -33,7 +33,9 @@
 #include "ansi.h"
 
 // #define FONT_FILE           "resources/font.ttf"
-#define FONT_FILE           "resources/SourceCodePro/SauceCodeProNerdFont-Regular.ttf"
+#define FONT_FILE              "resources/SourceCodePro/SauceCodeProNerdFont-Regular.ttf"
+#define FONT_FILE1             "/usr/share/fonts/truetype/noto/NotoSansSymbols-Regular.ttf"
+#define FONT_FILE2             "/usr/share/fonts/truetype/noto/NotoSansSymbols2-Regular.ttf"
 // #define FONT_FILE           "resources/CodeNewRoman/CodeNewRomanNerdFontMono-Regular.otf"
 // #define FONT_FILE           "resources/Monoid/MonoidNerdFont-Regular.ttf"
 // #define FONT_FILE           "resources/SpaceMono/SpaceMonoNerdFont-Regular.ttf"
