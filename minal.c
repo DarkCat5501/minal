@@ -849,6 +849,7 @@ void minal_parse_ansi(Minal* m, StringView* bytes)
 
         case INDEX: {
             if (m->cursor.row < m->config.n_rows) minal_cursor_move(m, m->cursor.col, m->cursor.row + 1);
+            else                                  minal_pagedown(m, 1);
             return;
         }
 
