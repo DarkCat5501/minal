@@ -1,5 +1,6 @@
 #include "minal.h"
-#include "convert.h"
+
+#define MOD(a, b) ((((a) % (b)) + (b)) % (b))
 
 bool is_utf8_head(uint8_t ch)
 {
@@ -33,17 +34,20 @@ void minal_spawn_shell(Minal *m)
     m->shell_pid = fork();
     if (m->shell_pid == 0) {
         login_tty(slave_fd);
+
         char *path = "/usr/bin/bash";
         char *defaultshell = getenv("SHELL");
         if (defaultshell != NULL)
             path = defaultshell;
         setenv("SHELL", path, true);
-        setenv("TERM", "vt100", true);
+
+        // setenv("TERM", "vt100", true);
         // setenv("TERM", "xterm", true);
         // setenv("TERM", "dumb", true);
-        //
+
         // setenv("PS1",  "\e[32m\xE2\x86\x92\e[m ", true);
-        setenv("PS1", "➜ ", true);
+        // setenv("PROMPT",  "\e[32m\xE2\x86\x92\e[m ", true);
+        // setenv("PS1", "➜ ", true);
         // setenv("PS1",  "\e[32m\xE2\x9E\x9C\e[m ", true);
         // setenv("PS1",  "$ ", true);
 
@@ -57,8 +61,6 @@ void minal_spawn_shell(Minal *m)
             printf("ERROR: execv: %s\n", strerror(errno));
             exit(1);
         };
-        usleep(2000);
-        exit(0);
     }
     m->master_fd = master_fd;
     m->slave_fd = slave_fd;
@@ -178,11 +180,27 @@ Minal minal_init()
     return m;
 }
 
+bool isparameter(uint8_t byte)
+{
+    return 0x30 <= byte && byte <= 0x3f;
+}
+
+bool isintermediate(uint8_t byte)
+{
+    return 0x20 <= byte && byte <= 0x2F;
+}
+
+bool isfinal(uint8_t byte)
+{
+    return 0x40 <= byte && byte <= 0x7E;
+}
+
 void minal_parse_ansi_args(Minal* m, StringView* bytes, int* argc, int argv[])
 {
-    while( 0x30 <= sv_first(bytes) && sv_first(bytes) <= 0x3f ) {
+    while(isparameter(sv_first(bytes))) {
         while (!isdigit(sv_first(bytes))) {
             sv_chop_left(bytes);
+            if (!isparameter(sv_first(bytes))) return;
         }
 
         int n = *argc;
@@ -190,14 +208,7 @@ void minal_parse_ansi_args(Minal* m, StringView* bytes, int* argc, int argv[])
         argv[n] = parsed;
         (*argc)++;
 
-        if (sv_first(bytes) != ';') {
-            break;
-        };
-        sv_chop_left(bytes);
-    }
-
-    // TODO: what the fuck is intermediate bytes supposed to do????
-    while( 0x20 <= sv_first(bytes) && sv_first(bytes) <= 0x2f ) {
+        if (sv_first(bytes) != ';') return;
         sv_chop_left(bytes);
     }
 }
@@ -206,184 +217,143 @@ void minal_parse_ansi_osc(Minal* m, StringView* bytes)
 {
     uint8_t b = sv_first(bytes);
 
-    int argv[10];
+    int max_args = 10;
+    int argv[max_args];
     int argc = 0;
     if (isdigit(b)) {
         minal_parse_ansi_args(m, bytes, &argc, argv);
         assert(argc > 0);
         b = argv[0];
     }
+    assert(argc <= max_args);
 
     switch (b) {
         case STP_ICON_NAME_WINDOW_TITLE: {
             printf("TODO: STP_ICON_NAME_WINDOW_TITLE\n");
         }; break;
-
         case STP_ICON_NAME: {
             printf("TODO: STP_ICON_NAME\n");
         }; break;
-
         case STP_WINDOW_TITLE: {
             printf("TODO: STP_WINDOW_TITLE\n");
         }; break;
-
         case STP_X_PROPERTY: {
             printf("TODO: STP_X_PROPERTY\n");
         }; break;
-
         case STP_COLOR_NUMBER: {
             printf("TODO: STP_COLOR_NUMBER\n");
         }; break;
-
         case STP_SPECIAL_COLOR_NUMBER: {
             printf("TODO: STP_SPECIAL_COLOR_NUMBER\n");
         }; break;
-
         case STP_TOGGLE_SPECIAL_CLRNUM: {
             printf("TODO: STP_TOGGLE_SPECIAL_CLRNUM\n");
         }; break;
-
         case STP_VT100_FG_COLOR: {
             printf("TODO: STP_VT100_FG_COLOR\n");
         }; break;
-
         case STP_VT100_BG_COLOR: {
             printf("TODO: STP_VT100_BG_COLOR\n");
         }; break;
-
         case STP_TEXT_CURSOR_COLOR: {
             printf("TODO: STP_TEXT_CURSOR_COLOR\n");
         }; break;
-
         case STP_POINTER_FG_COLOR: {
             printf("TODO: STP_POINTER_FG_COLOR\n");
         }; break;
-
         case STP_POINTER_BG_COLOR: {
             printf("TODO: STP_POINTER_BG_COLOR\n");
         }; break;
-
         case STP_TEKTRONIX_FG_COLOR: {
             printf("TODO: STP_TEKTRONIX_FG_COLOR\n");
         }; break;
-
         case STP_TEKTRONIX_BG_COLOR: {
             printf("TODO: STP_TEKTRONIX_BG_COLOR\n");
         }; break;
-
         case STP_HIGHLIGHT_BG_COLOR: {
             printf("TODO: STP_HIGHLIGHT_BG_COLOR\n");
         }; break;
-
         case STP_TEKTRONIX_CURSOR_COLOR: {
             printf("TODO: STP_TEKTRONIX_CURSOR_COLOR\n");
         }; break;
-
         case STP_HIGHLIGHT_FG_COLOR: {
             printf("TODO: STP_HIGHLIGHT_FG_COLOR\n");
         }; break;
-
         case STP_POINTER_CURSOR_SHAPE: {
             printf("TODO: STP_POINTER_CURSOR_SHAPE\n");
         }; break;
-
         case STP_CHANGE_LOG_FILE: {
             printf("TODO: STP_CHANGE_LOG_FILE\n");
         }; break;
-
         case STP_SET_FONT: {
             printf("TODO: STP_SET_FONT\n");
         }; break;
-
         case STP_FOR_EMACS: {
             printf("TODO: STP_FOR_EMACS\n");
         }; break;
-
         case STP_MANIP_SELECTION_DATA: {
             printf("TODO: STP_MANIP_SELECTION_DATA\n");
         }; break;
-
         case STP_XTERM_QUERY_ALLOWED: {
             printf("TODO: STP_XTERM_QUERY_ALLOWED\n");
         }; break;
-
         case STP_XTERM_QUERY_DISALLOWED: {
             printf("TODO: STP_XTERM_QUERY_DISALLOWED\n");
         }; break;
-
         case STP_XTERM_QUERY_ALLOWABLE: {
             printf("TODO: STP_XTERM_QUERY_ALLOWABLE\n");
         }; break;
-
         case STP_RESET_COLOR: {
             printf("TODO: STP_RESET_COLOR\n");
         }; break;
-
         case STP_RESET_SPECIAL_COLOR: {
             printf("TODO: STP_RESET_SPECIAL_COLOR\n");
         }; break;
-
         case STP_TOGGLE_SPECIAL_COLOR: {
             printf("TODO: STP_TOGGLE_SPECIAL_COLOR\n");
         }; break;
-
         case STP_RESET_VT100_TXTFGCLR: {
             printf("TODO: STP_RESET_VT100_TXTFGCLR\n");
         }; break;
-
         case STP_RESET_VT100_TXTBGCLR: {
             printf("TODO: STP_RESET_VT100_TXTBGCLR\n");
         }; break;
-
         case STP_RESET_TEXT_CURSOR_COLOR: {
             printf("TODO: STP_RESET_TEXT_CURSOR_COLOR\n");
         }; break;
-
         case STP_RESET_POINTER_FG_COLOR: {
             printf("TODO: STP_RESET_POINTER_FG_COLOR\n");
         }; break;
-
         case STP_RESET_POINTER_BG_COLOR: {
             printf("TODO: STP_RESET_POINTER_BG_COLOR\n");
         }; break;
-
         case STP_RESET_TKTX_FG_COLOR: {
             printf("TODO: STP_RESET_TKTX_FG_COLOR\n");
         }; break;
-
         case STP_RESET_TKTX_BG_COLOR: {
             printf("TODO: STP_RESET_TKTX_BG_COLOR\n");
         }; break;
-
         case STP_RESET_HIGHLIGHT_COLOR: {
             printf("TODO: STP_RESET_HIGHLIGHT_COLOR\n");
         }; break;
-
         case STP_RESET_TKTX_CURSOR_COLOR: {
             printf("TODO: STP_RESET_TKTX_CURSOR_COLOR\n");
         }; break;
-
         case STP_RESET_HIGHLIGHT_FGCOLOR: {
             printf("TODO: STP_RESET_HIGHLIGHT_FGCOLOR\n");
         }; break;
-
         case STP_SET_ICON_TO_FILE: {
             printf("TODO: STP_SET_ICON_TO_FILE\n");
         }; break;
-
         case STP_SET_WINDOW_TITLE: {
             printf("TODO: STP_SET_WINDOW_TITLE\n");
         }; break;
-
         case STP_SET_ICON_LABEL: {
             printf("TODO: STP_SET_ICON_LABEL\n");
         }; break;
-
         case STP_TODO_FIGURE_THIS_OUT: {
             printf("TODO: ESC OSC 7; <t> ST => WHAT THE F IS ?THIS MA?N?????\n");
         }; break;
-
-
         default: printf("UNKNOWN OSC COMMAND: %08b | %02X (%c)\n", b, b, b); break;
     }
 
@@ -767,7 +737,6 @@ void minal_parse_ansi_csi(Minal* m, StringView* bytes)
         }; break;
 
         default: {
-            // __asm__("int3");
             printf("UNKNOW CSI ESCAPE SEQUENCE\n");
             printf("    OP: %c\n", b);
             if (argc > 0) {
@@ -779,7 +748,6 @@ void minal_parse_ansi_csi(Minal* m, StringView* bytes)
             }
         }; break;
     }
-    // printf(" CSI: BEFORE END: 0b%08b - 0x%02X (%c)\n", b, b, b);
     return;
 }
 
@@ -806,7 +774,7 @@ void minal_parse_ansi(Minal* m, StringView* bytes)
         }
 
         case REVERSE_INDEX: {
-            printf("TODO: C1 CODE: REVERSE_INDEX\n");
+            if (m->cursor.row > 0) minal_cursor_move(m, m->cursor.col, m->cursor.row - 1);
             return;
         }
 
@@ -1297,11 +1265,7 @@ void minal_erase_in_line(Minal* m, size_t opt)
         }; break;
     }
 
-    if (start > end) {
-        size_t tmp = start;
-        start = end;
-        end = tmp;
-    }
+    if (start > end) return;
 
     for (size_t i = start; i <= end; ++i) {
         line->items[i] = (Cell) {
@@ -1325,7 +1289,7 @@ void minal_erase_in_display(Minal* m, size_t opt)
     if (opt == ERASE_IN_DISPLAY_SAVED) {
         m->row_offset = 0;
 
-        // TODO: apply current style to all lines
+        // TODO: apply current style to all collumns in all lines
         for (int i = 0; i < m->lines.len; ++i) {
             memset(m->lines.items[i].items, 0, m->lines.items[i].len);
             m->lines.items[i].len = 0;
@@ -1426,7 +1390,7 @@ void minal_receiver(Minal* m)
     FILE* f = fopen("dump/dump.txt", "a");
     char out[10];
     for (size_t i = 0; i < view.len; ++i) {
-        char ch = *(view.data + i);
+        uint8_t ch = *(view.data + i);
         int n;
         if (ch == '\n') {
             n = sprintf(out, "\n");
@@ -1447,32 +1411,52 @@ void minal_receiver(Minal* m)
         size_t y   = minal_cursor2absol(m);
 
         if (ch == '\0') {
+            #ifdef DEBUG
+            printf("\\0\n");
+            #endif
             continue;
         }
 
         if (ch == BELL) {
+            #ifdef DEBUG
+            printf("BELL\n");
+            #endif
             continue;
         }
 
         if (ch == LINEFEED) {
+            #ifdef DEBUG
+            printf("\\n\n");
+            #endif
             minal_linefeed(m);
             continue;
         }
 
         if (ch == CARRIAGERET) {
+            #ifdef DEBUG
+            printf("\\r\n");
+            #endif
             minal_carriageret(m);
             continue;
         }
 
         if (ch == DEL) {
-            printf("RECEIVED DEL\n");
+            #ifdef DEBUG
+            printf("DEL\n");
+            #endif
         }
 
         if (ch == BACKSPACE) {
+            #ifdef DEBUG
+            printf("BACKSPACE\n");
+            #endif
+
             if (x == 0 && m->cursor.row == 0) continue;
 
             if (!m->autowrap) {
-                minal_cursor_move(m, x - 1, m->cursor.row);
+                // minal_cursor_move(m, x - 1, m->cursor.row);
+                size_t ncols = m->config.n_cols;
+                minal_cursor_move(m, MOD(x - 1, ncols), m->cursor.row);
             } else {
                 if (x > 0) {
                     minal_cursor_move(m, x - 1, m->cursor.row);
@@ -1620,25 +1604,22 @@ void minal_render_text(Minal* m)
         for (size_t col = 0; col < l.len; ++col) {
             int len = c_utf32_char_to_utf8_buf(utf8buf, utf8buf + 5, l.items[col].content);
             sb_nconcat(&m->screen, utf8buf, len);
-        }
-        sb_append(&m->screen, '\n');
-
 #ifdef DUMP_BUFFER
-
-        for (size_t i = 0; i < l.len; ++i) {
-            uint32_t ch = l.items[i].content;
-            // c_utf32_char_to_utf8_buf(char* out_utf8_buf, const char* utf8_buf_end, const uint32_t char32);
-            char out[10];
+            char toprint[6];
             int n;
-            n = sprintf(out, "%lc ", ch);
-            // if (isprint(ch)) {
-            // } else {
-            //     n = sprintf(out, "%02X ", ch);
-            // }
-            fwrite(out, 1, n, f);
+            for (int i = 0; i < len; ++i) {
+                uint8_t ch = utf8buf[i];
+                if (isprint(ch)) n = sprintf(toprint, "%c", ch);
+                else             n = sprintf(toprint, "0x%02X", ch);
+                fwrite(toprint, 1, n, f);
+            }
+#endif
         }
+#ifdef DUMP_BUFFER
         fwrite("\n", 1, 1, f);
 #endif
+        sb_append(&m->screen, '\n');
+
     }
 
 #ifdef DUMP_BUFFER

@@ -1069,20 +1069,20 @@ SOFTWARE.
 #define STP_COLOR_NUMBER            4         // ESC OSC  4  ;  c  ; spec                 | Change Color Number c to the color specified by spec.
 #define STP_SPECIAL_COLOR_NUMBER    5         // ESC OSC  5  ;  c  ; spec                 | Change Special Color Number c to the color specified by spec.
 #define STP_TOGGLE_SPECIAL_CLRNUM   6         // ESC OSC  6  ;  c  ; f                    | Enable/disable Special Color Number c.
-#define STP_TODO_FIGURE_THIS_OUT    7         // ESC OSC  7  ; <t> ST                     | Zsh expects this shit. I don't what it is.
-#define STP_VT100_FG_COLOR          10        // ESC OSC  10                              | Change VT100 text foreground color to Pt.
-#define STP_VT100_BG_COLOR          11        // ESC OSC  11                              | Change VT100 text background color to Pt.
-#define STP_TEXT_CURSOR_COLOR       12        // ESC OSC  12                              | Change text cursor color to Pt.
-#define STP_POINTER_FG_COLOR        13        // ESC OSC  13                              | Change pointer foreground color to Pt.
-#define STP_POINTER_BG_COLOR        14        // ESC OSC  14                              | Change pointer background color to Pt.
-#define STP_TEKTRONIX_FG_COLOR      15        // ESC OSC  15                              | Change Tektronix foreground color to Pt.
-#define STP_TEKTRONIX_BG_COLOR      16        // ESC OSC  16                              | Change Tektronix background color to Pt.
-#define STP_HIGHLIGHT_BG_COLOR      17        // ESC OSC  17                              | Change highlight background color to Pt.
-#define STP_TEKTRONIX_CURSOR_COLOR  18        // ESC OSC  18                              | Change Tektronix cursor color to Pt.
-#define STP_HIGHLIGHT_FG_COLOR      19        // ESC OSC  19                              | Change highlight foreground color to Pt.
-#define STP_POINTER_CURSOR_SHAPE    22        // ESC OSC  22                              | Change pointer cursor shape to Pt.
-#define STP_CHANGE_LOG_FILE         46        // ESC OSC  46                              | Change Log File to Pt.
-#define STP_SET_FONT                50        // ESC OSC  50                              | Set Font to Pt.
+#define STP_TODO_FIGURE_THIS_OUT    7         // ESC OSC  7  ; <t> ST                     | Zsh uses this shit. I don't know what it is.
+#define STP_VT100_FG_COLOR          10        // ESC OSC  10 ; <t> ST                     | Change VT100 text foreground color to Pt.
+#define STP_VT100_BG_COLOR          11        // ESC OSC  11 ; <t> ST                     | Change VT100 text background color to Pt.
+#define STP_TEXT_CURSOR_COLOR       12        // ESC OSC  12 ; <t> ST                     | Change text cursor color to Pt.
+#define STP_POINTER_FG_COLOR        13        // ESC OSC  13 ; <t> ST                     | Change pointer foreground color to Pt.
+#define STP_POINTER_BG_COLOR        14        // ESC OSC  14 ; <t> ST                     | Change pointer background color to Pt.
+#define STP_TEKTRONIX_FG_COLOR      15        // ESC OSC  15 ; <t> ST                     | Change Tektronix foreground color to Pt.
+#define STP_TEKTRONIX_BG_COLOR      16        // ESC OSC  16 ; <t> ST                     | Change Tektronix background color to Pt.
+#define STP_HIGHLIGHT_BG_COLOR      17        // ESC OSC  17 ; <t> ST                     | Change highlight background color to Pt.
+#define STP_TEKTRONIX_CURSOR_COLOR  18        // ESC OSC  18 ; <t> ST                     | Change Tektronix cursor color to Pt.
+#define STP_HIGHLIGHT_FG_COLOR      19        // ESC OSC  19 ; <t> ST                     | Change highlight foreground color to Pt.
+#define STP_POINTER_CURSOR_SHAPE    22        // ESC OSC  22 ; <t> ST                     | Change pointer cursor shape to Pt.
+#define STP_CHANGE_LOG_FILE         46        // ESC OSC  46 ; <t> ST                     | Change Log File to Pt.
+#define STP_SET_FONT                50        // ESC OSC  50 ; <t> ST                     | Set Font to Pt.
 #define STP_FOR_EMACS               51        // ESC OSC  51                              | reserved for Emacs shell.
 #define STP_MANIP_SELECTION_DATA    52        // ESC OSC  52                              | Manipulate Selection Data.
 #define STP_XTERM_QUERY_ALLOWED     60        // ESC OSC  60                              | Query allowed features (XTQALLOWED).

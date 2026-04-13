@@ -26,7 +26,7 @@
 #include <SDL3/SDL_timer.h>
 #include <SDL3_ttf/SDL_ttf.h>
 
-#define DEBUG true
+// #define DEBUG true
 // #define DUMP_BUFFER true
 
 #include "convert.h"
