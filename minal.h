@@ -15,6 +15,7 @@
 
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_events.h>
+#include <SDL3/SDL_gpu.h>
 #include <SDL3/SDL_keycode.h>
 #include <SDL3/SDL_keyboard.h>
 #include <SDL3/SDL_render.h>
@@ -22,16 +23,16 @@
 #include <SDL3/SDL_timer.h>
 #include <SDL3_ttf/SDL_ttf.h>
 
-#define DEBUG true
-#define DUMP_BUFFER true
-
-#include "convert.h"
+// #define DEBUG true
+// #define DUMP_BUFFER true
 
 #define _32K 32678
 #define CARR_SB_INIT_CAP _32K
 #define CARR_SV_IMPLEMENTATION
 #include "carrlib/sv.h"
 #include "carrlib/vec.h"
+#define CARR_UNICODE_IMPLEMENTATION
+#include "carrlib/unicode.h"
 #include "ansi.h"
 
 // #define FONT_FILE           "resources/font.ttf"
@@ -89,10 +90,10 @@
 
 #define DEFAULT_FONT_SIZE   18.0f
 #define DEFAULT_DISPLAY_DPI 96
-#define DEFAULT_N_COLS      80
-#define DEFAULT_N_ROWS      24
+#define DEFAULT_N_COLS      90
+#define DEFAULT_N_ROWS      30
 
-#define FPS    60
+#define FPS    144
 
 extern char **environ;
 
@@ -137,7 +138,7 @@ typedef struct {
 } Cell;
 
 typedef struct {
-    Cell* items;
+    Cell*    items;
     size_t   len;
     size_t   cap;
 } Line;
@@ -147,11 +148,6 @@ typedef struct {
     size_t len;
     size_t cap;
 } Lines;
-
-typedef enum {
-    KEYPAD_NORMAL_MODE,
-    KEYPAD_APPLICATION_MODE,
-} KeypadMode;
 
 typedef struct {
     Lines           lines;
@@ -179,9 +175,11 @@ typedef struct {
     int             slave_fd;
     int             master_fd;
 
-    bool            bracket_mode;
+    bool            bracketed_paste;
     bool            autowrap;
-    KeypadMode      keypad_mode;
+    bool            autonewline;
+    bool            keypad_application;
+    bool            cursor_application;
 } Minal;
 
 // basic stuff
@@ -195,6 +193,7 @@ void        minal_run(Minal* m);
 void        minal_parse_ansi(Minal* m, StringView* bytes);
 void        minal_erase_in_line(Minal* m, size_t opt);
 void        minal_erase_in_display(Minal* m, size_t opt);
+void        minal_delete_chars(Minal* m, size_t n);
 void        minal_pageup(Minal* m, size_t opt);
 void        minal_pagedown(Minal* m, size_t opt);
 void        minal_linefeed(Minal* m);
@@ -223,6 +222,7 @@ void        minal_render_text(Minal* m);
 Cell        minal_at(Minal *m, size_t col, size_t row);
 void        minal_insert_at(Minal* m, size_t col, size_t row, Cell c);
 void        minal_append(Minal* m, size_t row, Cell c);
+Cell        default_cell(Minal *m);
 
 // line
 void        minal_new_line(Minal *m);
@@ -234,7 +234,7 @@ size_t      screen_col2idx(StringView* l, size_t col);
 size_t      screen_getline(StringView l, size_t index);
 
 // helpers
-const char* SDLK_to_ansicode(SDL_Keycode key);
+size_t      SDLKeyboardEvent_to_ansicode(Minal* m, SDL_KeyboardEvent ev, char out[10]);
 bool        is_utf8_head(uint8_t ch);
 size_t      utf8_chrlen(char ch);
 
@@ -242,50 +242,73 @@ size_t      utf8_chrlen(char ch);
 // colors and styles
 // TODO: not use constants for all these stuff
 //       as to allow users to change these values dynamically
-#define DEFAULT_FG_COLOR WHITE
-#define DEFAULT_BG_COLOR BLACK
+#define DEFAULT_FG_COLOR FOREGROUND_COLOR
+#define DEFAULT_BG_COLOR BACKGROUND_COLOR
 
-// Colors from Debug console, "Dark+" theme for VSCode.
-// Source: https://en.wikipedia.org/wiki/ANSI_escape_code#Colors
 
 enum {
-     BLACK,
-     RED,
-     GREEN,
-     YELLOW,
-     BLUE,
-     MAGENTA,
-     CYAN,
-     WHITE,
-     BRIGHT_BLACK,
-     BRIGHT_RED,
-     BRIGHT_GREEN,
-     BRIGHT_YELLOW,
-     BRIGHT_BLUE,
-     BRIGHT_MAGENTA,
-     BRIGHT_CYAN,
-     BRIGHT_WHITE,
+    BLACK,
+    RED,
+    GREEN,
+    YELLOW,
+    BLUE,
+    MAGENTA,
+    CYAN,
+    WHITE,
+    BRIGHT_BLACK,
+    BRIGHT_RED,
+    BRIGHT_GREEN,
+    BRIGHT_YELLOW,
+    BRIGHT_BLUE,
+    BRIGHT_MAGENTA,
+    BRIGHT_CYAN,
+    BRIGHT_WHITE,
+    BACKGROUND_COLOR,
+    FOREGROUND_COLOR,
+    __color_count,
 };
 
 const SDL_Color BASE_COLORS[] = {
-     [BLACK]           = { .r =   0, .g =   0, .b =   0, .a = 255 },
-     [RED]             = { .r = 205, .g =  49, .b =  49, .a = 255 },
-     [GREEN] 	       = { .r =  13, .g = 188, .b = 121, .a = 255 },
-     [YELLOW] 	       = { .r = 229, .g = 229, .b =  16, .a = 255 },
-     [BLUE] 	       = { .r =  36, .g = 114, .b = 200, .a = 255 },
-     [MAGENTA]         = { .r = 188, .g =  63, .b = 188, .a = 255 },
-     [CYAN] 	       = { .r =  17, .g = 168, .b = 205, .a = 255 },
-     [WHITE] 	       = { .r = 230, .g = 230, .b = 230, .a = 255 },
-     [BRIGHT_BLACK]    = { .r = 102, .g = 102, .b = 102, .a = 255 },
-     [BRIGHT_RED] 	   = { .r = 241, .g =  76, .b =  76, .a = 255 },
-     [BRIGHT_GREEN]    = { .r =  35, .g = 209, .b = 139, .a = 255 },
-     [BRIGHT_YELLOW]   = { .r = 247, .g = 247, .b =  67, .a = 255 },
-     [BRIGHT_BLUE]     = { .r =  59, .g = 142, .b = 234, .a = 255 },
-     [BRIGHT_MAGENTA]  = { .r = 214, .g = 112, .b = 214, .a = 255 },
-     [BRIGHT_CYAN]     = { .r =  41, .g = 184, .b = 219, .a = 255 },
-     [BRIGHT_WHITE]    = { .r = 229, .g = 229, .b = 229, .a = 255 },
+    //  from [Debug console, "Dark+" theme for VSCode](https://en.wikipedia.org/wiki/ANSI_escape_code#Colors) 
+    // [BLACK]           = { .r =   0, .g =   0, .b =   0, .a = 255 },
+    // [RED]             = { .r = 205, .g =  49, .b =  49, .a = 255 },
+    // [GREEN] 	      = { .r =  13, .g = 188, .b = 121, .a = 255 },
+    // [YELLOW] 	      = { .r = 229, .g = 229, .b =  16, .a = 255 },
+    // [BLUE] 	          = { .r =  36, .g = 114, .b = 200, .a = 255 },
+    // [MAGENTA]         = { .r = 188, .g =  63, .b = 188, .a = 255 },
+    // [CYAN] 	          = { .r =  17, .g = 168, .b = 205, .a = 255 },
+    // [WHITE] 	      = { .r = 150, .g = 150, .b = 150, .a = 255 },
+    // [BRIGHT_BLACK]    = { .r = 102, .g = 102, .b = 102, .a = 255 },
+    // [BRIGHT_RED] 	  = { .r = 241, .g =  76, .b =  76, .a = 255 },
+    // [BRIGHT_GREEN]    = { .r =  35, .g = 209, .b = 139, .a = 255 },
+    // [BRIGHT_YELLOW]   = { .r = 247, .g = 247, .b =  67, .a = 255 },
+    // [BRIGHT_BLUE]     = { .r =  59, .g = 142, .b = 234, .a = 255 },
+    // [BRIGHT_MAGENTA]  = { .r = 214, .g = 112, .b = 214, .a = 255 },
+    // [BRIGHT_CYAN]     = { .r =  41, .g = 184, .b = 219, .a = 255 },
+    // [BRIGHT_WHITE]    = { .r = 229, .g = 229, .b = 229, .a = 255 },
+
+    // from foot's default configuration (locally installed in @[$HOME/.config/foot/foot.ini]
+    [BLACK]            = { .r = 0x24, .g = 0x24, .b = 0x24, .a = 255}, 
+    [RED]              = { .r = 0xf6, .g = 0x2b, .b = 0x5a, .a = 255}, 
+    [GREEN] 	       = { .r = 0x47, .g = 0xb4, .b = 0x13, .a = 255}, 
+    [YELLOW] 	       = { .r = 0xe3, .g = 0xc4, .b = 0x01, .a = 255}, 
+    [BLUE] 	           = { .r = 0x24, .g = 0xac, .b = 0xd4, .a = 255}, 
+    [MAGENTA]          = { .r = 0xf2, .g = 0xaf, .b = 0xfd, .a = 255}, 
+    [CYAN] 	           = { .r = 0x13, .g = 0xc2, .b = 0x99, .a = 255}, 
+    [WHITE] 	       = { .r = 0xe6, .g = 0xe6, .b = 0xe6, .a = 255}, 
+    [BRIGHT_BLACK]     = { .r = 0x61, .g = 0x61, .b = 0x61, .a = 255}, 
+    [BRIGHT_RED] 	   = { .r = 0xff, .g = 0x4d, .b = 0x51, .a = 255}, 
+    [BRIGHT_GREEN]     = { .r = 0x35, .g = 0xd4, .b = 0x50, .a = 255}, 
+    [BRIGHT_YELLOW]    = { .r = 0xe9, .g = 0xe8, .b = 0x36, .a = 255}, 
+    [BRIGHT_BLUE]      = { .r = 0x5d, .g = 0xc5, .b = 0xf8, .a = 255}, 
+    [BRIGHT_MAGENTA]   = { .r = 0xfe, .g = 0xab, .b = 0xf2, .a = 255}, 
+    [BRIGHT_CYAN]      = { .r = 0x24, .g = 0xdf, .b = 0xc4, .a = 255}, 
+    [BRIGHT_WHITE]     = { .r = 0xff, .g = 0xff, .b = 0xff, .a = 255}, 
+    [BACKGROUND_COLOR] = { .r = 0x00, .g = 0x00, .b = 0x00, .a = 255}, 
+    [FOREGROUND_COLOR] = { .r = 0xa8, .g = 0xa8, .b = 0xa8, .a = 255}, 
 };
 
+static_assert(sizeof(BASE_COLORS) / sizeof(*BASE_COLORS) == __color_count);
 
 const Style DEFAULT_STYLE = {
     .bold        = false,
