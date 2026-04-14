@@ -2,12 +2,8 @@
 #define MINAL_H_
 
 #include <assert.h>
-#include <ctype.h>
-#include <errno.h>
 #include <fcntl.h>
-#include <math.h>
 #include <pty.h>
-#include <signal.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -40,10 +36,13 @@
 
 // #define FONT_FILE           "resources/font.ttf"
 #define FONT_FILE              "resources/font.ttf"
-#define FALLBACK_1             "/usr/share/fonts/TTF/Hack-Bold.ttf"
-#define FALLBACK_2             "/usr/share/fonts/TTF/DejaVuSansMono.ttf"
-#define FALLBACK_3             "/usr/share/fonts/gnu-free/FreeSerif.otf"
+// #define FALLBACK_1             "/usr/share/fonts/TTF/Hack-Bold.ttf"
+// #define FALLBACK_2             "/usr/share/fonts/TTF/DejaVuSansMono.ttf"
+// #define FALLBACK_3             "/usr/share/fonts/gnu-free/FreeSerif.otf"
 
+#define FALLBACK_1             "/home/vincent/.local/share/fonts/Hack Regular Nerd Font Complete Mono.ttf"
+#define FALLBACK_2             "/home/vincent/.local/share/fonts/Hack Regular Nerd Font Complete Mono.ttf"
+#define FALLBACK_3             "/home/vincent/.local/share/fonts/Hack Regular Nerd Font Complete Mono.ttf"
 // #define FONT_FILE           "/usr/share/fonts/TTF/DejaVuSansMono.ttf"
 // #define FONT_FILE           "resources/SourceCodePro/SauceCodeProNerdFont-Regular.ttf"
 // #define FONT_FILE           "resources/CodeNewRoman/CodeNewRomanNerdFontMono-Regular.otf"

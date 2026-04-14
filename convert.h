@@ -41,6 +41,8 @@
 //      at least 1 byte will always be skipped
 
 #pragma once
+#include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <assert.h>
 
@@ -164,3 +166,23 @@ C_UTF8_INLINE_FUNC int c_utf32_char_to_utf8_buf(char* out_utf8_buf, const char* 
     return c_utf8_char_to_buf(out_utf8_buf, utf8_buf_end, utf8_char);
 }
 
+
+bool is_utf8_head(uint8_t ch)
+{
+    return ((ch >> 7) & 1) == 1 &&
+            (ch >> 6)  != 0b10;
+}
+
+size_t utf8_chrlen(char ch)
+{
+    uint8_t b = (uint8_t)ch;
+    size_t size = 0;
+    for (size_t i = 0; i < 4; i++) {
+        if ((b >> (7 - i) & 1) == 1) {
+            size += 1;
+        } else {
+            break;
+        }
+    }
+    return size == 0 ? 1 : size;
+}

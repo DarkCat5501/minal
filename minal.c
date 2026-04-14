@@ -1,25 +1,7 @@
 #include "minal.h"
+#include <math.h>
 #include "convert.h"
-
-bool is_utf8_head(uint8_t ch)
-{
-    return ((ch >> 7) & 1) == 1 &&
-            (ch >> 6)  != 0b10;
-}
-
-size_t utf8_chrlen(char ch)
-{
-    uint8_t b = (uint8_t)ch;
-    size_t size = 0;
-    for (size_t i = 0; i < 4; i++) {
-        if ((b >> (7 - i) & 1) == 1) {
-            size += 1;
-        } else {
-            break;
-        }
-    }
-    return size == 0 ? 1 : size;
-}
+#include "xterm_ansi.h"
 
 void minal_spawn_shell(Minal *m) {
     int master_fd;
@@ -173,690 +155,8 @@ Minal minal_init()
         .style = DEFAULT_STYLE,
     };
 
-    m.autowrap = true;
-
     assert(SDL_StartTextInput(m.window));
     return m;
-}
-
-void minal_parse_ansi_args(Minal* m, StringView* bytes, int* argc, int argv[])
-{
-    while( 0x30 <= sv_first(bytes) && sv_first(bytes) <= 0x3f ) {
-        while (!isdigit(sv_first(bytes))) {
-            sv_chop_left(bytes);
-        }
-
-        int n = *argc;
-        int parsed = sv_parse_int(bytes);
-        argv[n] = parsed;
-        (*argc)++;
-
-        if (sv_first(bytes) != ';') {
-            break;
-        };
-        sv_chop_left(bytes);
-    }
-
-    // TODO: what the fuck is intermediate bytes supposed to do????
-    while( 0x20 <= sv_first(bytes) && sv_first(bytes) <= 0x2f ) {
-        sv_chop_left(bytes);
-    }
-}
-
-void minal_parse_ansi_osc(Minal* m, StringView* bytes)
-{
-    uint8_t b = sv_first(bytes);
-
-    int argv[10];
-    int argc = 0;
-    if (isdigit(b)) {
-        minal_parse_ansi_args(m, bytes, &argc, argv);
-        assert(argc > 0);
-        b = argv[0];
-    }
-
-    switch (b) {
-        case STP_ICON_NAME_WINDOW_TITLE: {
-            printf("TODO: STP_ICON_NAME_WINDOW_TITLE\n");
-        }; break;
-
-        case STP_ICON_NAME: {
-            printf("TODO: STP_ICON_NAME\n");
-        }; break;
-
-        case STP_WINDOW_TITLE: {
-            printf("TODO: STP_WINDOW_TITLE\n");
-        }; break;
-
-        case STP_X_PROPERTY: {
-            printf("TODO: STP_X_PROPERTY\n");
-        }; break;
-
-        case STP_COLOR_NUMBER: {
-            printf("TODO: STP_COLOR_NUMBER\n");
-        }; break;
-
-        case STP_SPECIAL_COLOR_NUMBER: {
-            printf("TODO: STP_SPECIAL_COLOR_NUMBER\n");
-        }; break;
-
-        case STP_TOGGLE_SPECIAL_CLRNUM: {
-            printf("TODO: STP_TOGGLE_SPECIAL_CLRNUM\n");
-        }; break;
-
-        case STP_VT100_FG_COLOR: {
-            printf("TODO: STP_VT100_FG_COLOR\n");
-        }; break;
-
-        case STP_VT100_BG_COLOR: {
-            printf("TODO: STP_VT100_BG_COLOR\n");
-        }; break;
-
-        case STP_TEXT_CURSOR_COLOR: {
-            printf("TODO: STP_TEXT_CURSOR_COLOR\n");
-        }; break;
-
-        case STP_POINTER_FG_COLOR: {
-            printf("TODO: STP_POINTER_FG_COLOR\n");
-        }; break;
-
-        case STP_POINTER_BG_COLOR: {
-            printf("TODO: STP_POINTER_BG_COLOR\n");
-        }; break;
-
-        case STP_TEKTRONIX_FG_COLOR: {
-            printf("TODO: STP_TEKTRONIX_FG_COLOR\n");
-        }; break;
-
-        case STP_TEKTRONIX_BG_COLOR: {
-            printf("TODO: STP_TEKTRONIX_BG_COLOR\n");
-        }; break;
-
-        case STP_HIGHLIGHT_BG_COLOR: {
-            printf("TODO: STP_HIGHLIGHT_BG_COLOR\n");
-        }; break;
-
-        case STP_TEKTRONIX_CURSOR_COLOR: {
-            printf("TODO: STP_TEKTRONIX_CURSOR_COLOR\n");
-        }; break;
-
-        case STP_HIGHLIGHT_FG_COLOR: {
-            printf("TODO: STP_HIGHLIGHT_FG_COLOR\n");
-        }; break;
-
-        case STP_POINTER_CURSOR_SHAPE: {
-            printf("TODO: STP_POINTER_CURSOR_SHAPE\n");
-        }; break;
-
-        case STP_CHANGE_LOG_FILE: {
-            printf("TODO: STP_CHANGE_LOG_FILE\n");
-        }; break;
-
-        case STP_SET_FONT: {
-            printf("TODO: STP_SET_FONT\n");
-        }; break;
-
-        case STP_FOR_EMACS: {
-            printf("TODO: STP_FOR_EMACS\n");
-        }; break;
-
-        case STP_MANIP_SELECTION_DATA: {
-            printf("TODO: STP_MANIP_SELECTION_DATA\n");
-        }; break;
-
-        case STP_XTERM_QUERY_ALLOWED: {
-            printf("TODO: STP_XTERM_QUERY_ALLOWED\n");
-        }; break;
-
-        case STP_XTERM_QUERY_DISALLOWED: {
-            printf("TODO: STP_XTERM_QUERY_DISALLOWED\n");
-        }; break;
-
-        case STP_XTERM_QUERY_ALLOWABLE: {
-            printf("TODO: STP_XTERM_QUERY_ALLOWABLE\n");
-        }; break;
-
-        case STP_RESET_COLOR: {
-            printf("TODO: STP_RESET_COLOR\n");
-        }; break;
-
-        case STP_RESET_SPECIAL_COLOR: {
-            printf("TODO: STP_RESET_SPECIAL_COLOR\n");
-        }; break;
-
-        case STP_TOGGLE_SPECIAL_COLOR: {
-            printf("TODO: STP_TOGGLE_SPECIAL_COLOR\n");
-        }; break;
-
-        case STP_RESET_VT100_TXTFGCLR: {
-            printf("TODO: STP_RESET_VT100_TXTFGCLR\n");
-        }; break;
-
-        case STP_RESET_VT100_TXTBGCLR: {
-            printf("TODO: STP_RESET_VT100_TXTBGCLR\n");
-        }; break;
-
-        case STP_RESET_TEXT_CURSOR_COLOR: {
-            printf("TODO: STP_RESET_TEXT_CURSOR_COLOR\n");
-        }; break;
-
-        case STP_RESET_POINTER_FG_COLOR: {
-            printf("TODO: STP_RESET_POINTER_FG_COLOR\n");
-        }; break;
-
-        case STP_RESET_POINTER_BG_COLOR: {
-            printf("TODO: STP_RESET_POINTER_BG_COLOR\n");
-        }; break;
-
-        case STP_RESET_TKTX_FG_COLOR: {
-            printf("TODO: STP_RESET_TKTX_FG_COLOR\n");
-        }; break;
-
-        case STP_RESET_TKTX_BG_COLOR: {
-            printf("TODO: STP_RESET_TKTX_BG_COLOR\n");
-        }; break;
-
-        case STP_RESET_HIGHLIGHT_COLOR: {
-            printf("TODO: STP_RESET_HIGHLIGHT_COLOR\n");
-        }; break;
-
-        case STP_RESET_TKTX_CURSOR_COLOR: {
-            printf("TODO: STP_RESET_TKTX_CURSOR_COLOR\n");
-        }; break;
-
-        case STP_RESET_HIGHLIGHT_FGCOLOR: {
-            printf("TODO: STP_RESET_HIGHLIGHT_FGCOLOR\n");
-        }; break;
-
-        case STP_SET_ICON_TO_FILE: {
-            printf("TODO: STP_SET_ICON_TO_FILE\n");
-        }; break;
-
-        case STP_SET_WINDOW_TITLE: {
-            printf("TODO: STP_SET_WINDOW_TITLE\n");
-        }; break;
-
-        case STP_SET_ICON_LABEL: {
-            printf("TODO: STP_SET_ICON_LABEL\n");
-        }; break;
-
-        case STP_TODO_FIGURE_THIS_OUT: {
-            printf("TODO: ESC OSC 7; <t> ST => WHAT THE F IS ?THIS MA?N?????\n");
-        }; break;
-
-
-        default: printf("UNKNOWN OSC COMMAND: %08b | %02X (%c)\n", b, b, b); break;
-    }
-
-    b = sv_chop_left(bytes);
-    while (b != STP_TERMINATOR_1 && b != STP_TERMINATOR_2) {
-        b = sv_chop_left(bytes);
-    }
-}
-
-
-void minal_parse_ansi_csi(Minal* m, StringView* bytes)
-{
-    uint8_t b = sv_first(bytes);
-
-    // the <ops> in [!, =, >, ?, u, s] comes before the arguments
-    switch (b) {
-
-        case CSI_BANG_PREFIX: {
-            printf("TODO: CSI !\n");
-        }; break;
-
-        case CSI_EQUALS_PREFIX: {
-            printf("TODO: CSI = \n");
-        }; break;
-
-        case CSI_GT_PREFIX: {
-            sv_chop_left(bytes);
-            int argv[10] = {-1};
-            int argc     = 0;
-            minal_parse_ansi_args(m, bytes, &argc, argv);
-
-            b = sv_chop_left(bytes);
-            switch (b) {
-                case 'T': {
-                    printf("TODO: CSI > '%c'\n", b);
-                }; break;
-                case 'c': {
-                    printf("TODO: CSI > '%c'\n", b);
-                }; break; 
-                case 'f': {
-                    printf("TODO CSI > '%c'\n", b);
-                }; break;
-                case 'm': {
-                    printf("TODO CSI > '%c'\n", b);
-                }; break;
-                case 'n': {
-                    printf("TODO CSI > '%c'\n", b);
-                }; break;
-                case 'p': {
-                    printf("TODO CSI > '%c'\n", b);
-                }; break;
-                case 'q': {
-                    printf("TODO CSI > '%c'\n", b);
-                }; break;
-                case 's': {
-                    int opt = 0;
-                    if (argc > 0) {
-                        opt = argv[0];
-                    }
-
-                    if (opt != 0 && opt != 1) {
-                        printf("ERROR: invalid XTSHIFTESCAPE argument: expected '0' or '1', got '%d'\n", opt);
-                        return;
-                    }
-
-                    switch (opt) {
-                        case 0: 
-                        case 1: {
-                            printf("TODO: CSI XTSHITESCAPE not implemented\n");
-                        }; break;
-                    }
-
-                }; break;
-                case 't': {
-                    printf("TODO CSI > '%c'\n", b);
-                }; break;
-                default: printf("UNKNOWN subcommando for CSI_GT_PREFIX: %08b | %02X (%c)\n", b, b, b);
-            }
-            return;
-        };
-
-        case CSI_QUESTION_MARK_PREFIX: {
-            sv_chop_left(bytes);
-
-            int opt = -1;
-            if (isdigit(sv_first(bytes))) {
-                opt = sv_parse_int(bytes);
-            }
-
-            b = sv_chop_left(bytes);
-
-            switch (opt) {
-                case DECSET_APPLICATION_CURSOR_KEYS:    { printf("TODO: DECSET_APPLICATION_CURSOR_KEYS\n"); } break;    
-                case DECSET_DESIGNATE_USASCII_G0_TO_G3: { printf("TODO: DECSET_DESIGNATE_USASCII_G0_TO_G3\n"); } break; 
-                case DECSET_COLUMN_MODE:                { printf("TODO: DECSET_COLUMN_MODE\n"); } break;                
-                case DECSET_SMOOTH_SCROLL:              { printf("TODO: DECSET_SMOOTH_SCROLL\n"); } break;              
-                case DECSET_REVERSE_VIDEO:              { printf("TODO: DECSET_REVERSE_VIDEO\n"); } break;              
-                case DECSET_ORIGIN_MODE:                { printf("TODO: DECSET_ORIGIN_MODE\n"); } break;                
-                case DECSET_AUTO_WRAP_MODE:             { m->autowrap = b == 'h'; } break;             
-                case DECSET_AUTO_REPEAT_KEYS:           { printf("TODO: DECSET_AUTO_REPEAT_KEYS\n"); } break;           
-                case DECSET_SEND_MOUSE_X_Y_ON_BUTPRESS: { printf("TODO: DECSET_SEND_MOUSE_X_Y_ON_BUTPRESS\n"); } break; 
-                case DECSET_SHOW_TOOLBAR:               { printf("TODO: DECSET_SHOW_TOOLBAR\n"); } break;               
-                case DECSET_START_BLINKING_CURSOR:      { printf("TODO: DECSET_START_BLINKING_CURSOR\n"); } break;      
-                case DECSET_START_BLINKING_CURSOR_2:    { printf("TODO: DECSET_START_BLINKING_CURSOR_2\n"); } break;    
-                case DECSET_XOR_BLINKING_CURSOR:        { printf("TODO: DECSET_XOR_BLINKING_CURSOR\n"); } break;        
-                case DECSET_PRINT_FORM_FEED:            { printf("TODO: DECSET_PRINT_FORM_FEED\n"); } break;            
-                case DECSET_SET_PRINT_EXT_FULLSCREEN:   { printf("TODO: DECSET_SET_PRINT_EXT_FULLSCREEN\n"); } break;   
-                case DECSET_SHOW_CURSOR:                { printf("TODO: DECSET_SHOW_CURSOR\n"); } break;                
-                case DECSET_SHOW_SCROLLBAR:             { printf("TODO: DECSET_SHOW_SCROLLBAR\n"); } break;             
-                case DECSET_ENB_FONT_SHIFTING:          { printf("TODO: DECSET_ENB_FONT_SHIFTING\n"); } break;          
-                case DECSET_ENTER_TEKTRONIX_MODE:       { printf("TODO: DECSET_ENTER_TEKTRONIX_MODE\n"); } break;       
-                case DECSET_132_MODE:                   { printf("TODO: DECSET_132_MODE\n"); } break;                   
-                case DECSET_MORE_FIX:                   { printf("TODO: DECSET_MORE_FIX\n"); } break;                   
-                case DECSET_ENB_NAT_REPLACE_CHSET:      { printf("TODO: DECSET_ENB_NAT_REPLACE_CHSET\n"); } break;      
-                case DECSET_ENB_GRAP_EXP_PRINT_MODE:    { printf("TODO: DECSET_ENB_GRAP_EXP_PRINT_MODE\n"); } break;    
-                case DECSET_TURN_ON_MARGIN_BELL:        { printf("TODO: DECSET_TURN_ON_MARGIN_BELL\n"); } break;        
-                // case DECSET_ENB_GRAP_PRINT_CLR_MODE:    { printf("TODO: DECSET_ENB_GRAP_PRINT_CLR_MODE\n"); } break;    
-                case DECSET_REVERSE_WRAP_MODE:          { printf("TODO: DECSET_REVERSE_WRAP_MODE\n"); } break;          
-                // case DECSET_ENB_GRAP_PRINT_CLR_SYNTAX:  { printf("TODO: DECSET_ENB_GRAP_PRINT_CLR_SYNTAX\n"); } break;  
-                case DECSET_START_LOGGING:              { printf("TODO: DECSET_START_LOGGING\n"); } break;              
-                // case DECSET_GRAP_PRINT_BG_MODE:         { printf("TODO: DECSET_GRAP_PRINT_BG_MODE\n"); } break;         
-                case DECSET_USE_ALTERNATE_SCREEN_BUF:   { printf("TODO: DECSET_USE_ALTERNATE_SCREEN_BUF\n"); } break;   
-                // case DECSET_ENB_GRAP_ROT_PRINT_MODE:    { printf("TODO: DECSET_ENB_GRAP_ROT_PRINT_MODE\n"); } break;    
-                case DECSET_APPLICATION_KEYPAD_MODE:    { printf("TODO: DECSET_APPLICATION_KEYPAD_MODE\n"); } break;    
-                case DECSET_BACKARROW_SENDS_BACKSPACE:  { printf("TODO: DECSET_BACKARROW_SENDS_BACKSPACE\n"); } break;  
-                case DECSET_LEFT_RIGHT_MARGIN_MODE:     { printf("TODO: DECSET_LEFT_RIGHT_MARGIN_MODE\n"); } break;     
-                case DECSET_ENB_SIXEL_DISPLAY_MODE:     { printf("TODO: DECSET_ENB_SIXEL_DISPLAY_MODE\n"); } break;     
-                case DECSET_NOTCLEAR_SCREEN_ON_DECCOLM: { printf("TODO: DECSET_NOTCLEAR_SCREEN_ON_DECCOLM\n"); } break; 
-                case DECSET_SEND_MOUXY_ON_BUTPRESSRELS: { printf("TODO: DECSET_SEND_MOUXY_ON_BUTPRESSRELS\n"); } break; 
-                case DECSET_HILITE_MOUSE_TRACKING:      { printf("TODO: DECSET_HILITE_MOUSE_TRACKING\n"); } break;      
-                case DECSET_CELL_MOTION_MOUSE_TRACKING: { printf("TODO: DECSET_CELL_MOTION_MOUSE_TRACKING\n"); } break; 
-                case DECSET_ALL_MOTION_MOUSE_TRACKING:  { printf("TODO: DECSET_ALL_MOTION_MOUSE_TRACKING\n"); } break;  
-                case DECSET_SEND_FOCUS_INOUT_EVENTS:    { printf("TODO: DECSET_SEND_FOCUS_INOUT_EVENTS\n"); } break;    
-                case DECSET_UTF8_MOUSE_MODE:            { printf("TODO: DECSET_UTF8_MOUSE_MODE\n"); } break;            
-                case DECSET_SGR_MOUSE_MODE:             { printf("TODO: DECSET_SGR_MOUSE_MODE\n"); } break;             
-                case DECSET_ALTERNATE_SCROLL_MODE:      { printf("TODO: DECSET_ALTERNATE_SCROLL_MODE\n"); } break;      
-                case DECSET_SCROLL_BOTTOM_TTY_OUTPUT:   { printf("TODO: DECSET_SCROLL_BOTTOM_TTY_OUTPUT\n"); } break;   
-                case DECSET_SCROLL_BOTTOM_ON_KEYPRESS:  { printf("TODO: DECSET_SCROLL_BOTTOM_ON_KEYPRESS\n"); } break;  
-                case DECSET_ENB_FASTSCROLL:             { printf("TODO: DECSET_ENB_FASTSCROLL\n"); } break;             
-                case DECSET_ENB_URXVT_MOUSE_MODE:       { printf("TODO: DECSET_ENB_URXVT_MOUSE_MODE\n"); } break;       
-                case DECSET_ENB_SGR_MOUSE_PIXELMODE:    { printf("TODO: DECSET_ENB_SGR_MOUSE_PIXELMODE\n"); } break;    
-                case DECSET_INTERPRET_META_KEY:         { printf("TODO: DECSET_INTERPRET_META_KEY\n"); } break;         
-                case DECSET_ENB_SPCMOD_ALT_NUMLOCK:     { printf("TODO: DECSET_ENB_SPCMOD_ALT_NUMLOCK\n"); } break;     
-                case DECSET_SEND_ESC_WHEN_META_MOD:     { printf("TODO: DECSET_SEND_ESC_WHEN_META_MOD\n"); } break;     
-                case DECSET_SEND_DEL_FROM_EDITKEYPAD:   { printf("TODO: DECSET_SEND_DEL_FROM_EDITKEYPAD\n"); } break;   
-                case DECSET_SEND_ESC_WHEN_ALT_MOD:      { printf("TODO: DECSET_SEND_ESC_WHEN_ALT_MOD\n"); } break;      
-                case DECSET_KEEP_SELEC_NOT_HIGLIG:      { printf("TODO: DECSET_KEEP_SELEC_NOT_HIGLIG\n"); } break;      
-                case DECSET_USE_CLIPBOARD_SELECTION:    { printf("TODO: DECSET_USE_CLIPBOARD_SELECTION\n"); } break;    
-                case DECSET_ENB_URGWIN_ON_CTRL_G:       { printf("TODO: DECSET_ENB_URGWIN_ON_CTRL_G\n"); } break;       
-                case DECSET_ENB_RAISEWIN_ON_CTRL_G:     { printf("TODO: DECSET_ENB_RAISEWIN_ON_CTRL_G\n"); } break;     
-                case DECSET_REUSE_MOST_RECENT_CLIPBRD:  { printf("TODO: DECSET_REUSE_MOST_RECENT_CLIPBRD\n"); } break;  
-                case DECSET_EXTENDED_REVERSE_WRAP_MODE: { printf("TODO: DECSET_EXTENDED_REVERSE_WRAP_MODE\n"); } break; 
-                case DECSET_ENB_SWAP_ALT_SCREEN_BUF:    { printf("TODO: DECSET_ENB_SWAP_ALT_SCREEN_BUF\n"); } break;    
-                case DECSET_USE_ALT_SCREEN_BUFFER:      { printf("TODO: DECSET_USE_ALT_SCREEN_BUFFER\n"); } break;      
-                case DECSET_SAVE_CURSOR:                { printf("TODO: DECSET_SAVE_CURSOR\n"); } break;                
-                case DECSET_SAVE_CURSOR_2:              { printf("TODO: DECSET_SAVE_CURSOR_2\n"); } break;              
-                case DECSET_TERMINFOCAP_FNKEY_MODE:     { printf("TODO: DECSET_TERMINFOCAP_FNKEY_MODE\n"); } break;     
-                case DECSET_SET_SUN_FUNCKEY_MODE:       { printf("TODO: DECSET_SET_SUN_FUNCKEY_MODE\n"); } break;       
-                case DECSET_SET_HP_FUNCKEY_MODE:        { printf("TODO: DECSET_SET_HP_FUNCKEY_MODE\n"); } break;        
-                case DECSET_SET_SCO_FUNCKEY_MODE:       { printf("TODO: DECSET_SET_SCO_FUNCKEY_MODE\n"); } break;       
-                case DECSET_SET_LEGACY_KEYBOARD_EMUL:   { printf("TODO: DECSET_SET_LEGACY_KEYBOARD_EMUL\n"); } break;   
-                case DECSET_SET_VT220_KEYBOARD_EMUL:    { printf("TODO: DECSET_SET_VT220_KEYBOARD_EMUL\n"); } break;    
-                case DECSET_SET_READLINE_MOUSEBUT_1:    { printf("TODO: DECSET_SET_READLINE_MOUSEBUT_1\n"); } break;    
-                case DECSET_SET_READLINE_MOUSEBUT_2:    { printf("TODO: DECSET_SET_READLINE_MOUSEBUT_2\n"); } break;    
-                case DECSET_SET_READLINE_MOUSEBUT_3:    { printf("TODO: DECSET_SET_READLINE_MOUSEBUT_3\n"); } break;    
-                case DECSET_SET_BRACKETED_PASTE_MODE:   { printf("TODO: DECSET_PASTER_BRACKETED_MODE\n"); m->bracket_mode = b == 'h'; } break;   
-                case DECSET_ENB_READLINE_CHARQUOTE:     { printf("TODO: DECSET_ENB_READLINE_CHARQUOTE\n"); } break;     
-                case DECSET_ENB_READLINE_NEWLINE_PASTE: { printf("TODO: DECSET_ENB_READLINE_NEWLINE_PASTE\n"); } break; 
-                default: printf("UNKNOWN DECSET OP: %d\n", opt);
-            }
-
-            return;
-        }
-
-
-        case SAVE_CURSOR: {
-            sv_chop_left(bytes);
-            m->saved_cursor = m->cursor;
-            return;
-        }
-
-        case RESTORE_CURSOR: {
-            sv_chop_left(bytes);
-            m->cursor = m->saved_cursor;
-            return;
-        }
-    }
-
-    int argv[10] = {-1};
-    int argc     = 0;
-    minal_parse_ansi_args(m, bytes, &argc, argv);
-
-    b = sv_chop_left(bytes);
-    switch (b) {
-
-        case CURSOR_UP: {
-            int opt = argc > 0 ? argv[0] : 1;
-
-            size_t new_row;
-
-            if (m->cursor.row < opt || m->cursor.row - opt <= m->reg_top) {
-                new_row = m->reg_top;
-            } else {
-                new_row = m->cursor.row - opt;
-            }
-            minal_cursor_move(m, m->cursor.col, new_row);
-        }; break;
-
-        case CURSOR_DOWN: {
-            int opt = argc > 0 ? argv[0] : 1;
-            size_t new_row;
-            if (m->cursor.row + opt >= m->reg_bot) {
-                new_row = m->reg_bot - 1;
-            } else {
-                new_row = m->cursor.row + opt;
-            }
-            minal_cursor_move(m, m->cursor.col, new_row);
-        }; break;
-
-        case CURSOR_FORWARD: {
-            int opt = argc > 0 ? argv[0] : 1;
-
-            size_t new_col;
-            if (m->cursor.col + opt >= m->config.n_cols) {
-                new_col = m->config.n_cols - 1;
-            } else {
-                new_col = m->cursor.col + opt;
-            }
-            minal_cursor_move(m, new_col, m->cursor.row);
-        }; break;
-
-        case CURSOR_BACK: {
-            int opt = argc > 0 ? argv[0] : 1;
-
-            size_t new_col;
-            if (m->cursor.col < opt) {
-                new_col = 0;
-            } else {
-                new_col = m->cursor.col - opt;
-            }
-            minal_cursor_move(m, new_col, m->cursor.row);
-        }; break;
-
-        case CURSOR_POSITION: {
-            int opt1 = argc > 0 ? argv[0] : 1;
-            int opt2 = argc > 1 ? argv[1] : 1;
-
-            size_t new_col = MIN(MAX(0, opt1 - 1), m->config.n_cols - 1);
-            size_t new_row = MIN(MAX(0, opt2 - 1), m->config.n_rows - 1);
-            minal_cursor_move(m, new_col, new_row);
-        }; break;
-
-        case ERASE_IN_DISPLAY: {
-            size_t opt = argc > 0 ? argv[0] : 0;
-            minal_erase_in_display(m, opt);
-        }; break;
-
-        case ERASE_IN_LINE: {
-            size_t opt = argc > 0 ? argv[0] : 0;
-            minal_erase_in_line(m, opt);
-        }; break;
-
-        case INSERT_LINES: {
-			printf("TODO: CSI %c\n", INSERT_LINES);
-		}; break;
-
-        case DELETE_LINES: {
-			printf("TODO: CSI %c\n", DELETE_LINES);
-		}; break;
-
-        case DELETE_CHARS: {
-			printf("TODO: CSI %c\n", DELETE_CHARS);
-		}; break;
-
-        case SCROLL_UP: {
-            size_t opt = argc > 0 ? argv[0] : 1;
-            minal_pageup(m, opt);
-        }; break;
-
-        case SCROLL_DOWN: {
-            size_t opt = argc > 0 ? argv[0] : 1;
-            minal_pagedown(m, opt);
-        }; break;
-
-        case ERASE_CHARS: {
-			printf("TODO: CSI %c\n", ERASE_CHARS);
-		}; break;
-
-        case BACKWARD_TAB: {
-			printf("TODO: CSI %c\n", BACKWARD_TAB);
-		}; break;
-
-        case SCROLL_DOWN_2: {
-			printf("TODO: CSI %c\n", SCROLL_DOWN_2);
-		}; break;
-
-        case CHAR_POSITION_ABSOLUTE: {
-			printf("TODO: CSI %c\n", CHAR_POSITION_ABSOLUTE);
-		}; break;
-
-        case CHAR_POSITION_RELATIVE: {
-			printf("TODO: CSI %c\n", CHAR_POSITION_RELATIVE);
-		}; break;
-
-        case REPEAT_PRECED_GRAPHIC_CHAR: {
-			printf("TODO: CSI %c\n", REPEAT_PRECED_GRAPHIC_CHAR);
-		}; break;
-
-        case DEVICE_ATTRIBUTES_REPORT: {
-			printf("TODO: CSI %c\n", DEVICE_ATTRIBUTES_REPORT);
-		}; break;
-
-        case LINE_POSITION_ABSOLUTE: {
-			printf("TODO: CSI %c\n", LINE_POSITION_ABSOLUTE);
-		}; break;
-
-        case LINE_POSITION_RELATIVE: {
-			printf("TODO: CSI %c\n", LINE_POSITION_RELATIVE);
-		}; break;
-
-        case HORIZONTAL_VERTICAL_POSITION: {
-			printf("TODO: CSI %c\n", HORIZONTAL_VERTICAL_POSITION);
-		}; break;
-
-        case TAB_CLEAR: {
-			printf("TODO: CSI %c\n", TAB_CLEAR);
-		}; break;
-
-        case SET_MODE: {
-			printf("TODO: CSI %c\n", SET_MODE);
-		}; break;
-            
-        case MEDIA_COPY: {
-			printf("TODO: CSI %c\n", MEDIA_COPY);
-		}; break;
-            
-        case RESET_MODE: {
-			printf("TODO: CSI %c\n", RESET_MODE);
-		}; break;
-
-        case SELECT_GRAPHIC_RENDITION: {
-            minal_graphic_mode(m, argv, argc);
-        }; break;
-
-        case DEVICE_STATUS_REPORT: {
-            if (argc < 1 && !(argv[0] == DSR_STATUS || argv[0] == DSR_CURSOR_POSITION)) {
-                printf("INVALID CSI ESCAPE SEQUENCE\n");
-                return;
-            }
-            if (argv[0] == DSR_STATUS) {
-                minal_write_str(m, "\x1B[0n");
-            }
-
-            // report cursor position as ESC[row;colR
-            char str[50];
-            sprintf(str, "\x1B[%zu;%zuR", m->cursor.row + 1, m->cursor.col + 1);
-            minal_write_str(m, str);
-        }; break;
-
-        case DEC_SCROLL_TOPBOT_MARGIN: { 
-            size_t top = argc > 0 ? argv[0] - 1 : 0;
-            size_t bot = argc > 1 ? argv[1] - 1 : m->config.n_rows - 1;
-
-            top = MAX(0, top);
-            bot = MIN(m->config.n_rows - 1, bot);
-
-            if (top > bot) {
-                top = 0;
-                bot = m->config.n_rows - 1;
-            }
-
-            m->reg_top = top;
-            m->reg_bot = bot;
-            minal_cursor_move(m, 0, 0);
-            minal_erase_in_display(m, 2);
-        }; break;
-
-        case DEC_SCROLL_LEFRIG_MARGIN: { 
-            printf("TODO: CSI: DEC_SCROLL_LEFRIG_MARGIN\n"); 
-        }; break;
-
-        default: {
-            // __asm__("int3");
-            printf("UNKNOW CSI ESCAPE SEQUENCE\n");
-            printf("    OP: %c\n", b);
-            if (argc > 0) {
-                printf("    ARGS: ");
-                for (int i = 0; i < argc; ++i) {
-                    printf("%d, ", argv[i]);
-                }
-                printf("\n");
-            }
-        }; break;
-    }
-    // printf(" CSI: BEFORE END: 0b%08b - 0x%02X (%c)\n", b, b, b);
-    return;
-}
-
-void minal_parse_ansi(Minal* m, StringView* bytes)
-{
-    uint8_t b = sv_chop_left(bytes);
-    switch (b) {
-
-        case DEC_SAVE_CURSOR: {
-            sv_chop_left(bytes);
-            m->saved_cursor = m->cursor;
-            return;
-        }
-
-        case DEC_RESTORE_CURSOR: {
-            sv_chop_left(bytes);
-            m->cursor = m->saved_cursor;
-            return;
-        }
-
-        case INDEX: {
-            printf("TODO: C1 CODE: INDEX\n");
-            return;
-        }
-
-        case REVERSE_INDEX: {
-            printf("TODO: C1 CODE: REVERSE_INDEX\n");
-            return;
-        }
-
-        case FULL_RESET: {
-            printf("TODO: C1 CODE: FULL_RESET\n");
-            return;
-        }
-
-        case DEC_KEYPAD_APPLICATION_MODE: {
-            printf("TODO: KEYPAD_APPLICATION_MODE\n");
-            m->keypad_mode = KEYPAD_APPLICATION_MODE;
-            return;
-        }
-
-        case DEC_KEYPAD_NORMAL_MODE: {
-            printf("TODO: KEYPAD_NORMAL_MODE\n");
-            m->keypad_mode = KEYPAD_NORMAL_MODE;
-            return;
-        }
-
-        case DEVICE_CONTROL_STRING: {
-            printf("TODO: DEVICE_CONTROL_STRING\n");
-            while(sv_chop_left(bytes) != ESC && sv_first(bytes) != STRING_TERMINATOR);
-            sv_chop_left(bytes);
-            return;
-        }
-
-        case CONTROL_SEQUENCE_INTRODUCER: {
-            minal_parse_ansi_csi(m, bytes);
-            return;
-        }
-
-        case STRING_TERMINATOR: {
-            printf("ERROR: ISOLATED STRING_TERMINATOR\n");
-        }; break;
-
-        case OPERATING_SYSTEM_COMMAND: {
-            minal_parse_ansi_osc(m, bytes);
-		}; break;
-
-        case PRIVACY_MESSAGE: {
-            printf("TODO: PRIVACY_MESSAGE\n");
-		}; break;
-
-        case APPLICATION_PROGRAM_COMMAND: {
-            printf("TODO: APPLICATION_PROGRAM_COMMAND\n");
-		}; break;
-
-        default: printf("UNKNOWN C1 CODE ESCAPE SEQUENCE: 0b%08b | 0x%02X (%c)\n", b, b, b);
-     }
 }
 
 SDL_FRect minal_cursor_to_rect(Minal* m)
@@ -1025,171 +325,171 @@ SDL_Color minal_select_color(Minal* m, int op)
 
 void minal_apply_style(Minal* m, int op) 
 {
-    switch (op) {
-        case SGR_NORMAL: {
-            m->cursor.style = DEFAULT_STYLE;
-			return;
-		}; break;
-        case SGR_BOLD_WEIGHT: {
-            m->cursor.style.bold = true;
-            m->cursor.style.faint = false;
-			return;
-		}; break;
-        case SGR_FAINT_WEIGHT: {
-            m->cursor.style.bold = false;
-            m->cursor.style.faint = true;
-			return;
-		}; break;
-        case SGR_ITALIC: {
-            m->cursor.style.italic = true;
-			return;
-		}; break;
-        case SGR_UNDERLINE: {
-            m->cursor.style.underline = true;
-            m->cursor.style.doubleunder = false;
-			return;
-		}; break;
-        case SGR_BLINK: {
-            m->cursor.style.blink = true;
-            m->cursor.style.fastblink = false;
-			return;
-		}; break;
-        case SGR_FAST_BLINK: {
-            m->cursor.style.blink = false;
-            m->cursor.style.fastblink = true;
-			return;
-		}; break;
-        case SGR_INVERSE: {
-            if (!m->cursor.style.inverse) {
-                m->cursor.style.inverse = true;
-                SDL_Color tmp = m->cursor.style.fg_color;
-                m->cursor.style.fg_color = m->cursor.style.bg_color;
-                m->cursor.style.bg_color = tmp;
-            }
-			return;
-		}; break;
-        case SGR_INVISIBLE: {
-            m->cursor.style.hidden = true;
-			return;
-		}; break;
-        case SGR_CROSSED_OUT: {
-            m->cursor.style.crossout = true;
-			return;
-		}; break;
-        case SGR_DOUBLE_UNDERLINE: {
-            m->cursor.style.doubleunder = true;
-            m->cursor.style.underline = false;
-			return;
-		}; break;
-        case SGR_NORMAL_WEIGHT: {
-            m->cursor.style.bold = false;
-            m->cursor.style.faint = false;
-			return;
-		}; break;
-        case SGR_NOT_ITALIC: {
-            m->cursor.style.italic = false;
-			return;
-		}; break;
-        case SGR_NOT_UNDERLINE: {
-            m->cursor.style.underline = false;
-            m->cursor.style.doubleunder = false;
-			return;
-		}; break;
-        case SGR_NOT_BLINK: {
-            m->cursor.style.blink = false;
-            m->cursor.style.fastblink = false;
-			return;
-		}; break;
-        case SGR_NOT_INVERSE: {
-            if (m->cursor.style.inverse) {
-                m->cursor.style.inverse = false;
-                SDL_Color tmp = m->cursor.style.fg_color;
-                m->cursor.style.fg_color = m->cursor.style.bg_color;
-                m->cursor.style.bg_color = tmp;
-            }
-			return;
-		}; break;
-        case SGR_VISIBLE: {
-            m->cursor.style.hidden = false;
-			return;
-		}; break;
-        case SGR_NOT_CROSSED_OUT: {
-            m->cursor.style.crossout = false;
-			return;
-		}; break;
-    }
+		//   switch (op) {
+		//       case SGR_NORMAL: {
+		//           m->cursor.style = DEFAULT_STYLE;
+		// 	return;
+		// }; break;
+		//       case SGR_BOLD_WEIGHT: {
+		//           m->cursor.style.bold = true;
+		//           m->cursor.style.faint = false;
+		// 	return;
+		// }; break;
+		//       case SGR_FAINT_WEIGHT: {
+		//           m->cursor.style.bold = false;
+		//           m->cursor.style.faint = true;
+		// 	return;
+		// }; break;
+		//       case SGR_ITALIC: {
+		//           m->cursor.style.italic = true;
+		// 	return;
+		// }; break;
+		//       case SGR_UNDERLINE: {
+		//           m->cursor.style.underline = true;
+		//           m->cursor.style.doubleunder = false;
+		// 	return;
+		// }; break;
+		//       case SGR_BLINK: {
+		//           m->cursor.style.blink = true;
+		//           m->cursor.style.fastblink = false;
+		// 	return;
+		// }; break;
+		//       case SGR_FAST_BLINK: {
+		//           m->cursor.style.blink = false;
+		//           m->cursor.style.fastblink = true;
+		// 	return;
+		// }; break;
+		//       case SGR_INVERSE: {
+		//           if (!m->cursor.style.inverse) {
+		//               m->cursor.style.inverse = true;
+		//               SDL_Color tmp = m->cursor.style.fg_color;
+		//               m->cursor.style.fg_color = m->cursor.style.bg_color;
+		//               m->cursor.style.bg_color = tmp;
+		//           }
+		// 	return;
+		// }; break;
+		//       case SGR_INVISIBLE: {
+		//           m->cursor.style.hidden = true;
+		// 	return;
+		// }; break;
+		//       case SGR_CROSSED_OUT: {
+		//           m->cursor.style.crossout = true;
+		// 	return;
+		// }; break;
+		//       case SGR_DOUBLE_UNDERLINE: {
+		//           m->cursor.style.doubleunder = true;
+		//           m->cursor.style.underline = false;
+		// 	return;
+		// }; break;
+		//       case SGR_NORMAL_WEIGHT: {
+		//           m->cursor.style.bold = false;
+		//           m->cursor.style.faint = false;
+		// 	return;
+		// }; break;
+		//       case SGR_NOT_ITALIC: {
+		//           m->cursor.style.italic = false;
+		// 	return;
+		// }; break;
+		//       case SGR_NOT_UNDERLINE: {
+		//           m->cursor.style.underline = false;
+		//           m->cursor.style.doubleunder = false;
+		// 	return;
+		// }; break;
+		//       case SGR_NOT_BLINK: {
+		//           m->cursor.style.blink = false;
+		//           m->cursor.style.fastblink = false;
+		// 	return;
+		// }; break;
+		//       case SGR_NOT_INVERSE: {
+		//           if (m->cursor.style.inverse) {
+		//               m->cursor.style.inverse = false;
+		//               SDL_Color tmp = m->cursor.style.fg_color;
+		//               m->cursor.style.fg_color = m->cursor.style.bg_color;
+		//               m->cursor.style.bg_color = tmp;
+		//           }
+		// 	return;
+		// }; break;
+		//       case SGR_VISIBLE: {
+		//           m->cursor.style.hidden = false;
+		// 	return;
+		// }; break;
+		//       case SGR_NOT_CROSSED_OUT: {
+		//           m->cursor.style.crossout = false;
+		// 	return;
+		// }; break;
+		//   }
 }
 
 
-void minal_graphic_mode(Minal* m, int* argv, int argc)
-{
-    if (argc == 0) {
-        // NOTE: ESC CSI m is treated as ESC CSI 0 m
-        argv[argc++] = 0;
-    }
-    int i = 0; 
-    while (i < argc) {
-        SDL_Color clr;
-        enum {
-            TARGET_FG,
-            TARGET_BG,
-            TARGET_UL,
-        } target = 0;
-        int op = argv[i];
-        if ((SGR_NORMAL <= op && op <= SGR_CROSSED_OUT) ||
-           (SGR_DOUBLE_UNDERLINE <= op && op <= SGR_NOT_CROSSED_OUT)) {
-            minal_apply_style(m, op);
-            i++;
-            continue;
-        }
-
-        if (op == SGR_FG_EXTENDED_COLOR_PREFIX || 
-            op == SGR_BG_EXTENDED_COLOR_PREFIX
-        ) {
-            target = (
-                op == SGR_FG_EXTENDED_COLOR_PREFIX ? TARGET_FG : 
-                op == SGR_UL_EXTENDED_COLOR_PREFIX ? TARGET_UL :
-                TARGET_BG
-            );
-            if (i + 1 >= argc) {
-                clr = target == TARGET_BG ? BASE_COLORS[DEFAULT_BG_COLOR] : BASE_COLORS[DEFAULT_FG_COLOR];
-                goto setcolor;
-            };
-            i++;
-            if (argv[i] == 5) {
-                assert(i + 1 < argc);
-                int idx = argv[++i];
-                clr = minal_select_color_by_index(m, idx);
-                goto setcolor;
-            } else if (argv[i] == 2) {
-                assert(i + 3 < argc);
-                int r = argv[++i];
-                int g = argv[++i];
-                int b = argv[++i];
-                clr = minal_select_color_extended(m, r, g, b);
-                goto setcolor;
-            }
-        }
-
-        if ((SGR_FG_BLACK <= op        && op <= SGR_BG_DEFAULT) ||
-            (SGR_FG_BRIGHT_BLACK <= op && op <= SGR_BG_BRIGHT_WHITE))
-        {
-            target = (SGR_BG_BLACK <= op && op <= SGR_BG_DEFAULT) || 
-                 (SGR_BG_BRIGHT_BLACK <= op && op <= SGR_BG_BRIGHT_WHITE) ?
-                TARGET_BG : TARGET_FG;
-            clr = minal_select_color(m, op);
-            goto setcolor;
-        }
-
-    setcolor:
-        switch (target) {
-            case TARGET_BG: m->cursor.style.bg_color = clr; break;
-            case TARGET_FG: m->cursor.style.fg_color = clr; break;
-            case TARGET_UL: m->cursor.style.ul_color = clr; break;
-        }
-        i++;
-    }
-}
+// void minal_graphic_mode(Minal* m, int* argv, int argc)
+// {
+//     if (argc == 0) {
+//         // NOTE: ESC CSI m is treated as ESC CSI 0 m
+//         argv[argc++] = 0;
+//     }
+//     int i = 0; 
+//     while (i < argc) {
+//         SDL_Color clr;
+//         enum {
+//             TARGET_FG,
+//             TARGET_BG,
+//             TARGET_UL,
+//         } target = 0;
+//         int op = argv[i];
+//         if ((SGR_NORMAL <= op && op <= SGR_CROSSED_OUT) ||
+//            (SGR_DOUBLE_UNDERLINE <= op && op <= SGR_NOT_CROSSED_OUT)) {
+//             minal_apply_style(m, op);
+//             i++;
+//             continue;
+//         }
+//
+//         if (op == SGR_FG_EXTENDED_COLOR_PREFIX || 
+//             op == SGR_BG_EXTENDED_COLOR_PREFIX
+//         ) {
+//             target = (
+//                 op == SGR_FG_EXTENDED_COLOR_PREFIX ? TARGET_FG : 
+//                 op == SGR_UL_EXTENDED_COLOR_PREFIX ? TARGET_UL :
+//                 TARGET_BG
+//             );
+//             if (i + 1 >= argc) {
+//                 clr = target == TARGET_BG ? BASE_COLORS[DEFAULT_BG_COLOR] : BASE_COLORS[DEFAULT_FG_COLOR];
+//                 goto setcolor;
+//             };
+//             i++;
+//             if (argv[i] == 5) {
+//                 assert(i + 1 < argc);
+//                 int idx = argv[++i];
+//                 clr = minal_select_color_by_index(m, idx);
+//                 goto setcolor;
+//             } else if (argv[i] == 2) {
+//                 assert(i + 3 < argc);
+//                 int r = argv[++i];
+//                 int g = argv[++i];
+//                 int b = argv[++i];
+//                 clr = minal_select_color_extended(m, r, g, b);
+//                 goto setcolor;
+//             }
+//         }
+//
+//         if ((SGR_FG_BLACK <= op        && op <= SGR_BG_DEFAULT) ||
+//             (SGR_FG_BRIGHT_BLACK <= op && op <= SGR_BG_BRIGHT_WHITE))
+//         {
+//             target = (SGR_BG_BLACK <= op && op <= SGR_BG_DEFAULT) || 
+//                  (SGR_BG_BRIGHT_BLACK <= op && op <= SGR_BG_BRIGHT_WHITE) ?
+//                 TARGET_BG : TARGET_FG;
+//             clr = minal_select_color(m, op);
+//             goto setcolor;
+//         }
+//
+//     setcolor:
+//         switch (target) {
+//             case TARGET_BG: m->cursor.style.bg_color = clr; break;
+//             case TARGET_FG: m->cursor.style.fg_color = clr; break;
+//             case TARGET_UL: m->cursor.style.ul_color = clr; break;
+//         }
+//         i++;
+//     }
+// }
 
 size_t minal_cursor2absol(Minal* m)
 {
@@ -1278,7 +578,6 @@ void minal_insert_at(Minal* m, size_t col, size_t row, Cell c)
     l->items[col] = c;
 }
 
-void minal_erase_in_line(Minal* m, size_t opt)
 //////////////////////////////////////////////
 //  opt=0                                   //
 //               start             end      //
@@ -1296,6 +595,7 @@ void minal_erase_in_line(Minal* m, size_t opt)
 //  [_, _, _, _, X, _, _, _, _, _, _]       //
 //                                          //
 //////////////////////////////////////////////
+void minal_erase_in_line(Minal* m, size_t opt)
 {
     size_t x    = m->cursor.col;
     size_t y    = minal_cursor2absol(m);
@@ -1307,22 +607,10 @@ void minal_erase_in_line(Minal* m, size_t opt)
     size_t start;
     size_t end;
     switch (opt) {
-
-        case ERASE_IN_LINE_LEFT: {
-            start = 0;
-            end   = x;
-        }; break;
-
-        case ERASE_IN_LINE_ALL: {
-            start = 0;
-            end   = line->len - 1;
-        }; break;
-
+        case ERASE_IN_LINE_LEFT: { start = 0;  end = x; }; break;
+        case ERASE_IN_LINE_ALL: { start = 0; end   = line->len - 1; }; break;
         case ERASE_IN_LINE_RIGHT:
-        default: {
-            start = x;
-            end   = line->len - 1;
-        }; break;
+        default: { start = x; end   = line->len - 1; }; break;
     }
 
     if (start > end) {
@@ -1427,105 +715,115 @@ void minal_receiver(Minal* m)
         offset += n;
     }
 
-    StringView view = (StringView) {
-        .data = _buf,
-        .len  = offset,
-    };
-
-#ifdef DEBUG
-    FILE* f = fopen("dump.txt", "a");
-    char out[10];
-    for (size_t i = 0; i < view.len; ++i) {
-        char ch = *(view.data + i);
-        int n;
-        if (ch == '\n') {
-            n = sprintf(out, "\n");
-        } else if (isprint(ch)) {
-            n = sprintf(out, "%c ", ch);
-        } else {
-            n = sprintf(out, "%02X ", ch);
-        }
-        fwrite(out, 1, n, f);
-    }
-    fclose(f);
-#endif
+    StringView view = (StringView) { .data = _buf, .len  = offset };
 
     while (view.len > 0) {
         uint8_t ch = (uint8_t)sv_chop_left(&view);
 
-        size_t x   = m->cursor.col;
-        size_t y   = minal_cursor2absol(m);
+        int x   = m->cursor.col;
+        int y   = minal_cursor2absol(m);
 
-        if (ch == '\0') {
-            continue;
-        }
-
-        if (ch == BELL) {
-            continue;
-        }
-
-        if (ch == LINEFEED) {
-            minal_linefeed(m);
-            continue;
-        }
-
-        if (ch == CARRIAGERET) {
-            minal_carriageret(m);
-            continue;
-        }
-
-        if (ch == DEL) {
-            printf("RECEIVED DEL\n");
-        }
-
-        if (ch == BACKSPACE) {
-            if (!(x > 0 || m->cursor.row > 0)) {
+        switch(ch) {
+            case '\0': { printf("<0>"); continue; }
+            case BELL: { printf("<BELL>"); continue; }
+            case LINEFEED: { minal_linefeed(m); printf("<NL>"); continue; }
+            case CARRIAGERET: {
+                minal_carriageret(m); printf("<CR>"); 
                 continue;
             }
+            case DEL: { printf("<DEL>"); continue; }
+            case BACKSPACE: {
+                    //TODO: handle backspace when wrap mode enabled
+                    if (m->autowrap) {
+                        printf("<BS wrap>");
+                        x -= 1;
+                        size_t new_x = x<0 ? m->config.n_cols-1 : SDL_min(SDL_max(0,x), m->config.n_cols);
+                        minal_cursor_move(m, new_x, m->cursor.row);
+                    }else{
+                        printf("<BS>");
+                        x -= 1;
+                        size_t new_x = x<0 ? m->config.n_cols-1 : SDL_min(SDL_max(0,x), m->config.n_cols);
+                        y = x < 0 ? m->cursor.row - 1: m->cursor.row;
+                        size_t new_y = x<0 ?SDL_max(0, m->cursor.row-1): m->cursor.row;
+                        minal_cursor_move(m, new_x, new_y);
+                    }
+                continue;
+            };
+            case ESC: {
+                size_t skip;
+                if(ansi_find_cmd_end(view.data-1,view.len+1,&skip)) {
+                    StringView command = (StringView){ .data = view.data-1, .len = skip };
+                    view.data += command.len-1;
+                    view.len  -=  command.len-1;
 
-            if (!m->autowrap) {
-                minal_cursor_move(m, x - 1, m->cursor.row);
-            } else {
-                if (x > 0) {
-                    minal_cursor_move(m, x - 1, m->cursor.row);
+                    ansi_debug(command.data,command.len);
+
+                    char cmd_id = sv_last(&command);
+                    switch(cmd_id) {
+                        case 'm': {
+                            StringView arg;
+                            // printf("<mode: ");
+                            // while(ansi_split_args(command.data+2, command.len-3, &arg.data, &arg.len)) {
+                            //     printf("%.*s ", (int)arg.len, arg.data);
+                            // }
+                            // printf(">");
+                            continue;
+                        } 
+                        case 'J': minal_erase_in_display(m, command.len == 3 ? 0 : command.data[2] - '0' ); continue;
+                        case 'K': minal_erase_in_line   (m, command.len == 3 ? 0 : command.data[2] - '0' ); continue;
+                        case 'H': {
+                            int row,col;
+                            ansi_split_int_args(command.data+2, command.len-3,&row,1);
+                            ansi_split_int_args(NULL, command.len-3,&col,1);
+                            size_t X = SDL_min(m->config.n_cols-1, SDL_max(0,col-1));
+                            size_t Y = SDL_min(m->config.n_rows-1, SDL_max(0,row-1));
+                            minal_cursor_move(m, X,Y);
+                            // printf("<move: %zu,%zu | %d ,%d>",X,Y,col,row);
+                            continue;
+                        }
+                        case 'l': case 'h': {
+                            //TODO: handle options
+                            // printf("<enable: %.*s>", (int)command.len-2, command.data+2); 
+                            continue;
+                        }
+                        case 'A': case 'B': case 'C': case 'D': {
+                            int n = command.len == 3 ? 1: ansi_str_to_int( command.data+2, command.len-3 , -1);
+                            if(n != -1) {
+                                switch(cmd_id) {
+                                    case 'A': minal_cursor_move(m, m->cursor.col, SDL_min(m->config.n_rows-1, SDL_max(0, m->cursor.row - n)));break;
+                                    case 'B': minal_cursor_move(m, m->cursor.col, SDL_min(m->config.n_rows-1, SDL_max(0, m->cursor.row + n)));break;
+                                    case 'C': minal_cursor_move(m, SDL_min(m->config.n_cols-1, SDL_max(0, m->cursor.col + n)), m->cursor.row);break;
+                                    case 'D': minal_cursor_move(m, SDL_min(m->config.n_cols-1, SDL_max(0, m->cursor.col - n)), m->cursor.row);break;
+                                }
+                            } else {
+                                printf("<invalid move: %c:%s>",cmd_id, command.data+2);
+                            }
+                            continue;
+                        }
+                        default: {
+                            printf("<unhandled:");
+                            ansi_debug(command.data,command.len);
+                            printf(">");
+                            continue;
+                        }
+                    }
+
+                // #ifdef DEBUG
+                //     printf("\033[40;32m<(%zu):", command.len);
+                //     ansi_debug(command.data,command.len);
+                //     printf(">\033[0m");
+                // #endif
                 } else {
-                    size_t last_col = m->config.n_cols - 1;
-                    minal_cursor_move(m, last_col, m->cursor.row - 1);
+                    printf("<INVALID ESCAPE>");
                 }
+                continue;
             }
-
-            continue;
         }
 
-        if (ch == ESC) {
-#ifdef DEBUG
-            printf("ESC ");
-            StringView before = view;
-#endif
-            minal_parse_ansi(m, &view);
 
-#ifdef DEBUG
-            StringView after = view;
-            size_t n = before.len - after.len;
-            for (size_t i = 0; i < n; ++i) {
-                uint8_t ch = before.data[i];
-                if (isprint(ch)) {
-                    printf("%c ", ch);
-                } else {
-                    printf("%02X ", ch);
-                }
-            }
-            printf("\n");
-#endif
-            continue;
-        }
-
-        // ch = (uint8_t)sv_chop_left(&view);
         int err;
         uint32_t content;
-        int n = c_utf8_buf_to_utf32_char_b(&content, view.data, &err);
-        view.data += n;
-        view.len  -= n;
+        int n = c_utf8_buf_to_utf32_char_b(&content, view.data - 1, &err);
         if (err) {
             printf("Failed to convert UTF-8=>UTF-32: %u (n = %d)\n", content, n);
             for (int i = n - 1; i >= 0; --i) {
@@ -1533,6 +831,10 @@ void minal_receiver(Minal* m)
             }
             printf("\n");
         }
+        // printf("\033[41;33m");//, n, view.data-1);
+        ansi_debug(view.data-1,n);
+        view.data += n-1;
+        view.len  -= n-1;
 
         Cell cell = (Cell) {
             .content = content,
@@ -1540,17 +842,20 @@ void minal_receiver(Minal* m)
         };
 
         minal_insert_at(m, x, y, cell);
-        if (!m->autowrap) {
-            minal_cursor_move(m, m->cursor.col + 1, m->cursor.row);
-        } else {
+        if (m->autowrap) {
             if (m->cursor.col == m->config.n_cols - 1) {
                 minal_carriageret(m);
                 minal_linefeed(m);
             } else {
                 minal_cursor_move(m, m->cursor.col + 1, m->cursor.row);
             }
+        } else {
+            size_t new_col = (x+1) % m->config.n_cols;
+            minal_cursor_move(m, new_col, m->cursor.row);
         }
     }
+
+    if(offset > 0) printf("\n");
 }
 
 void minal_transmitter(Minal* m, SDL_Event* event)
@@ -1561,219 +866,118 @@ void minal_transmitter(Minal* m, SDL_Event* event)
     }
 
     if (event->type == SDL_EVENT_KEY_DOWN) {
-        if (event->key.key == SDLK_ESCAPE) {
-            m->run = false;
-            return;
-        }
-    }
-
-    if (event->type == SDL_EVENT_KEY_DOWN) {
         SDL_Keycode k = event->key.key;
-        if (event->key.mod & SDL_KMOD_CTRL) {
-            switch (event->key.key) {
-                 case SDLK_AT: {
-					minal_write_char(m, NULL_);
-				 }; break;
-                 case SDLK_A: {
-					minal_write_char(m, START_OF_HEADING);
-				 }; break;
-                 case SDLK_B: {
-					minal_write_char(m, START_OF_TEXT);
-				 }; break;
-                 case SDLK_C: {
-					minal_write_char(m, END_OF_TEXT);
-				 }; break;
-                 case SDLK_D: {
-					minal_write_char(m, END_OF_TRANSMISSION);
-				 }; break;
-                 case SDLK_E: {
-					minal_write_char(m, ENQUIRY);
-				 }; break;
-                 case SDLK_F: {
-					minal_write_char(m, ACKNOWLEDGE);
-				 }; break;
-                 case SDLK_G: {
-					minal_write_char(m, BELL);
-				 }; break;
-                 case SDLK_H: {
-					minal_write_char(m, BACKSPACE);
-				 }; break;
-                 case SDLK_I: {
-					minal_write_char(m, TAB);
-				 }; break;
-                 case SDLK_J: {
-					minal_write_char(m, LINEFEED);
-				 }; break;
-                 case SDLK_K: {
-					minal_write_char(m, VERTTAB);
-				 }; break;
-                 case SDLK_L: {
-					minal_write_char(m, FORMFEED);
-				 }; break;
-                 case SDLK_M: {
-					minal_write_char(m, CARRIAGERET);
-				 }; break;
-                 case SDLK_N: {
-					minal_write_char(m, SHIFT_OUT);
-				 }; break;
-                 case SDLK_O: {
-					minal_write_char(m, SHIFT_IN);
-				 }; break;
-                 case SDLK_P: {
-					minal_write_char(m, DATA_LINK_ESCAPE);
-				 }; break;
-                 case SDLK_Q: {
-					minal_write_char(m, DEVICE_CONTROL_ONE);
-				 }; break;
-                 case SDLK_R: {
-					minal_write_char(m, DEVICE_CONTROL_TWO);
-				 }; break;
-                 case SDLK_S: {
-					minal_write_char(m, DEVICE_CONTROL_THREE);
-				 }; break;
-                 case SDLK_T: {
-					minal_write_char(m, DEVICE_CONTROL_FOUR);
-				 }; break;
-                 case SDLK_U: {
-					minal_write_char(m, NEGATIVE_ACKNOWLEDGE);
-				 }; break;
-                 case SDLK_V: {
-					minal_write_char(m, SYNCHRONOUS_IDLE);
-				 }; break;
-                 case SDLK_W: {
-					minal_write_char(m, END_TRANSMISSION_BLOCK);
-				 }; break;
-                 case SDLK_X: {
-					minal_write_char(m, CANCEL);
-				 }; break;
-                 case SDLK_Y: {
-					minal_write_char(m, END_OF_MEDIUM);
-				 }; break;
-                 case SDLK_Z: {
-					minal_write_char(m, SUBSTITUTE);
-				 }; break;
-                 case SDLK_LEFTBRACKET: {
-					minal_write_char(m, ESC);
-				 }; break;
-                 case SDLK_BACKSLASH: { 
-                    minal_write_char(m, FILE_SEPARATOR);
-                }; break;
-                 case SDLK_RIGHTBRACKET: {
-					minal_write_char(m, GROUP_SEPARATOR);
-				 }; break;
-                 case SDLK_CARET: {
-					minal_write_char(m, RECORD_SEPARATOR);
-				 }; break;
-                 case SDLK_UNDERSCORE: {
-					minal_write_char(m, UNIT_SEPARATOR);
-				 }; break;
-            }                   
+        if (k == SDLK_ESCAPE) {
+            //TODO: emit escape "^["
+        } else if (event->key.mod & SDL_KMOD_CTRL) {
+            printf("TODO: handle CTRL commands\n");
+            // switch (event->key.key) {
+            //              case SDLK_AT: {
+    	        // minal_write_char(m, NULL_);
+            //  }; break;
+            //              case SDLK_A: {
+            // 	minal_write_char(m, START_OF_HEADING);
+            //  }; break;
+            //              case SDLK_B: {
+            // 	minal_write_char(m, START_OF_TEXT);
+            //  }; break;
+            //              case SDLK_C: {
+            // 	minal_write_char(m, END_OF_TEXT);
+            //  }; break;
+            //              case SDLK_D: {
+            // 	minal_write_char(m, END_OF_TRANSMISSION);
+            //  }; break;
+            //              case SDLK_E: {
+            // 	minal_write_char(m, ENQUIRY);
+            //  }; break;
+            //              case SDLK_F: {
+            // 	minal_write_char(m, ACKNOWLEDGE);
+            //  }; break;
+            //              case SDLK_G: {
+            // 	minal_write_char(m, BELL);
+            //  }; break;
+            //              case SDLK_H: {
+            // 	minal_write_char(m, BACKSPACE);
+            //  }; break;
+            //              case SDLK_I: {
+            // 	minal_write_char(m, TAB);
+            //  }; break;
+            //              case SDLK_J: {
+            // 	minal_write_char(m, LINEFEED);
+            //  }; break;
+            //              case SDLK_K: {
+            // 	minal_write_char(m, VERTTAB);
+            //  }; break;
+            //              case SDLK_L: {
+            // 	minal_write_char(m, FORMFEED);
+            //  }; break;
+            //              case SDLK_M: {
+            // 	minal_write_char(m, CARRIAGERET);
+            //  }; break;
+            //              case SDLK_N: {
+            // 	minal_write_char(m, SHIFT_OUT);
+            //  }; break;
+            //              case SDLK_O: {
+            // 	minal_write_char(m, SHIFT_IN);
+            //  }; break;
+            //              case SDLK_P: {
+            // 	minal_write_char(m, DATA_LINK_ESCAPE);
+            //  }; break;
+            //              case SDLK_Q: {
+            // 	minal_write_char(m, DEVICE_CONTROL_ONE);
+            //  }; break;
+            //              case SDLK_R: {
+            // 	minal_write_char(m, DEVICE_CONTROL_TWO);
+            //  }; break;
+            //              case SDLK_S: {
+            // 	minal_write_char(m, DEVICE_CONTROL_THREE);
+            //  }; break;
+            //              case SDLK_T: {
+            // 	minal_write_char(m, DEVICE_CONTROL_FOUR);
+            //  }; break;
+            //              case SDLK_U: {
+            // 	minal_write_char(m, NEGATIVE_ACKNOWLEDGE);
+            //  }; break;
+            //              case SDLK_V: {
+            // 	minal_write_char(m, SYNCHRONOUS_IDLE);
+            //  }; break;
+            //              case SDLK_W: {
+            // 	minal_write_char(m, END_TRANSMISSION_BLOCK);
+            //  }; break;
+            //              case SDLK_X: {
+            // 	minal_write_char(m, CANCEL);
+            //  }; break;
+            //              case SDLK_Y: {
+            // 	minal_write_char(m, END_OF_MEDIUM);
+            //  }; break;
+            //              case SDLK_Z: {
+            // 	minal_write_char(m, SUBSTITUTE);
+            //  }; break;
+            //              case SDLK_LEFTBRACKET: {
+            // 	minal_write_char(m, ESC);
+            //  }; break;
+            //              case SDLK_BACKSLASH: { 
+            //                 minal_write_char(m, FILE_SEPARATOR);
+            //             }; break;
+            //              case SDLK_RIGHTBRACKET: {
+            // 	minal_write_char(m, GROUP_SEPARATOR);
+            //  }; break;
+            //              case SDLK_CARET: {
+            // 	minal_write_char(m, RECORD_SEPARATOR);
+            //  }; break;
+            //              case SDLK_UNDERSCORE: {
+            // 	minal_write_char(m, UNIT_SEPARATOR);
+            //  }; break;
+            //         }                   
         } else if (event->key.mod & SDL_KMOD_ALT) {
-            switch (event->key.key) {
-                 case SDLK_A: {
-					minal_write_char(m, ESC);
-					minal_write_char(m, 'a');
-				 }; break;
-                 case SDLK_B: {
-					minal_write_char(m, ESC);
-					minal_write_char(m, 'b');
-				 }; break;
-                 case SDLK_C: {
-					minal_write_char(m, ESC);
-					minal_write_char(m, 'c');
-				 }; break;
-                 case SDLK_D: {
-					minal_write_char(m, ESC);
-					minal_write_char(m, 'd');
-				 }; break;
-                 case SDLK_E: {
-					minal_write_char(m, ESC);
-					minal_write_char(m, 'e');
-				 }; break;
-                 case SDLK_F: {
-					minal_write_char(m, ESC);
-					minal_write_char(m, 'f');
-				 }; break;
-                 case SDLK_G: {
-					minal_write_char(m, ESC);
-					minal_write_char(m, 'g');
-				 }; break;
-                 case SDLK_H: {
-					minal_write_char(m, ESC);
-					minal_write_char(m, 'h');
-				 }; break;
-                 case SDLK_I: {
-					minal_write_char(m, ESC);
-					minal_write_char(m, 'i');
-				 }; break;
-                 case SDLK_J: {
-					minal_write_char(m, ESC);
-					minal_write_char(m, 'j');
-				 }; break;
-                 case SDLK_K: {
-					minal_write_char(m, ESC);
-					minal_write_char(m, 'k');
-				 }; break;
-                 case SDLK_L: {
-					minal_write_char(m, ESC);
-					minal_write_char(m, 'l');
-				 }; break;
-                 case SDLK_M: {
-					minal_write_char(m, ESC);
-					minal_write_char(m, 'm');
-				 }; break;
-                 case SDLK_N: {
-					minal_write_char(m, ESC);
-					minal_write_char(m, 'n');
-				 }; break;
-                 case SDLK_O: {
-					minal_write_char(m, ESC);
-					minal_write_char(m, 'o');
-				 }; break;
-                 case SDLK_P: {
-					minal_write_char(m, ESC);
-					minal_write_char(m, 'p');
-				 }; break;
-                 case SDLK_Q: {
-					minal_write_char(m, ESC);
-					minal_write_char(m, 'q');
-				 }; break;
-                 case SDLK_R: {
-					minal_write_char(m, ESC);
-					minal_write_char(m, 'r');
-				 }; break;
-                 case SDLK_S: {
-					minal_write_char(m, ESC);
-					minal_write_char(m, 's');
-				 }; break;
-                 case SDLK_T: {
-					minal_write_char(m, ESC);
-					minal_write_char(m, 't');
-				 }; break;
-                 case SDLK_U: {
-					minal_write_char(m, ESC);
-					minal_write_char(m, 'u');
-				 }; break;
-                 case SDLK_V: {
-					minal_write_char(m, ESC);
-					minal_write_char(m, 'v');
-				 }; break;
-                 case SDLK_W: {
-					minal_write_char(m, ESC);
-					minal_write_char(m, 'w');
-				 }; break;
-                 case SDLK_X: {
-					minal_write_char(m, ESC);
-					minal_write_char(m, 'x');
-				 }; break;
-                 case SDLK_Y: {
-					minal_write_char(m, ESC);
-					minal_write_char(m, 'y');
-				 }; break;
-                 case SDLK_Z: {
-					minal_write_char(m, ESC);
-					minal_write_char(m, 'z');
-				 }; break;
+            if( k==SDLK_LALT || k==SDLK_RALT ) return;
+            else if( k==SDLK_LCTRL || k==SDLK_RCTRL ) return;
+            else if( SDLK_A <= k && k <= SDLK_Z) {
+                char keyCode[3] = "\033a";
+                keyCode[1] =  'a' + (k-SDLK_A);
+                minal_write_str(m, keyCode);
+            } else {
+                printf("Unhandle ALT Key: %s\n", SDL_GetKeyName(k));
             }
         } else {
             switch (k) {
@@ -2050,20 +1254,6 @@ void find_full_feature_fonts(Minal m)
 int main(void)
 {
     Minal m = minal_init();
-    // TTF_FontHasGlyph(m.config.font, "➜");
-    // printf("Has %c? %s\n", 0x00000061, TTF_FontHasGlyph(m.config.font, 0x00000061) ? "true": "false") ;
-    // uint32_t s;
-    // s = TTF_GetFontScript(m.config.font);
-    // printf("Font Script Before: %.*s\n", 4, (char*)&s);
-
-    // s = TTF_GetGlyphScript(0x0000279C);
-    // printf("Glyph Script: %.*s\n", 4, (char*)&s);
-
-    // assert(TTF_SetFontScript(m.config.font, s));
-    // s = TTF_GetFontScript(m.config.font);
-    // printf("Font Script After: %.*s\n", 4, (char*)&s);
-    // find_full_feature_fonts(m);
-    // return 0;
     minal_run(&m);
     minal_finish(&m);
     return 0;
@@ -2072,6 +1262,7 @@ int main(void)
 const char* SDLK_to_ansicode(SDL_Keycode key)
 {
     switch (key) {
+        case SDLK_ESCAPE:    return "^[";
         case SDLK_BACKSPACE: return "\b";
         case SDLK_RETURN:    return "\n";
         case SDLK_TAB:       return "\t";
