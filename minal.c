@@ -156,7 +156,7 @@ Minal minal_init()
         .style = DEFAULT_STYLE,
     };
 
-    m.autowrap           = true;
+    m.autowrap           = false;
     m.keypad_application = false;
     m.cursor_application = false;
     m.autonewline        = false;
@@ -1272,7 +1272,9 @@ void minal_append(Minal* m, size_t row, Cell c)
 
 void minal_insert_at(Minal* m, size_t col, size_t row, Cell c)
 {
-    assert(row >= 0 && row < m->lines.len);
+    col = SDL_max(0, SDL_min(col, m->config.n_cols-1));
+    row = SDL_max(0, SDL_min(row, m->config.n_rows-1));
+
     Line* l = &m->lines.items[row];
     if (col >= m->config.n_cols) return;
 
@@ -1452,89 +1454,83 @@ void minal_receiver(Minal* m)
             }
             case DEL: { printf("<DEL>"); continue; }
             case BACKSPACE: {
-                    //TODO: handle backspace when wrap mode enabled
-                    if (m->autowrap) {
-                        printf("<BS wrap>");
-                        x -= 1;
-                        size_t new_x = x<0 ? m->config.n_cols-1 : SDL_min(SDL_max(0,x), m->config.n_cols);
-                        minal_cursor_move(m, new_x, m->cursor.row);
-                    }else{
-                        printf("<BS>");
-                        x -= 1;
-                        size_t new_x = x<0 ? m->config.n_cols-1 : SDL_min(SDL_max(0,x), m->config.n_cols);
-                        y = x < 0 ? m->cursor.row - 1: m->cursor.row;
-                        size_t new_y = x<0 ?SDL_max(0, m->cursor.row-1): m->cursor.row;
-                        minal_cursor_move(m, new_x, new_y);
-                    }
+                size_t next_col = m->cursor.col - 1;
+                size_t next_row = m->cursor.row;
+
+                if (next_col == (size_t)-1) {
+                    next_col = 0;
+                    next_row -= m->autowrap;
+                }
                 continue;
             };
             case ESC: {
-                size_t skip;
-                if(ansi_find_cmd_end(view.data-1,view.len+1,&skip)) {
-                    StringView command = (StringView){ .data = view.data-1, .len = skip };
-                    view.data += command.len-1;
-                    view.len  -=  command.len-1;
-
-                    // ansi_debug(command.data,command.len);
-
-                    char cmd_id = sv_last(&command);
-                    switch(cmd_id) {
-                        case 'm': {
-                            StringView arg;
-                            // printf("<mode: ");
-                            // while(ansi_split_args(command.data+2, command.len-3, &arg.data, &arg.len)) {
-                            //     printf("%.*s ", (int)arg.len, arg.data);
-                            // }
-                            // printf(">");
-                            continue;
-                        }
-                        case 'J': minal_erase_in_display(m, command.len == 3 ? 0 : command.data[2] - '0' ); continue;
-                        case 'K': minal_erase_in_line   (m, command.len == 3 ? 0 : command.data[2] - '0' ); continue;
-                        case 'H': {
-                            int row,col;
-                            ansi_split_int_args(command.data+2, command.len-3,&row,1);
-                            ansi_split_int_args(NULL, command.len-3,&col,1);
-                            size_t X = SDL_min(m->config.n_cols-1, SDL_max(0,col-1));
-                            size_t Y = SDL_min(m->config.n_rows-1, SDL_max(0,row-1));
-                            minal_cursor_move(m, X,Y);
-                            // printf("<move: %zu,%zu | %d ,%d>",X,Y,col,row);
-                            continue;
-                        }
-                        case 'l': case 'h': {
-                            //TODO: handle options
-                            // printf("<enable: %.*s>", (int)command.len-2, command.data+2); 
-                            continue;
-                        }
-                        case 'A': case 'B': case 'C': case 'D': {
-                            int n = command.len == 3 ? 1: ansi_str_to_int( command.data+2, command.len-3 , -1);
-                            if(n != -1) {
-                                switch(cmd_id) {
-                                    case 'A': minal_cursor_move(m, m->cursor.col, SDL_min(m->config.n_rows-1, SDL_max(0, m->cursor.row - n)));break;
-                                    case 'B': minal_cursor_move(m, m->cursor.col, SDL_min(m->config.n_rows-1, SDL_max(0, m->cursor.row + n)));break;
-                                    case 'C': minal_cursor_move(m, SDL_min(m->config.n_cols-1, SDL_max(0, m->cursor.col + n)), m->cursor.row);break;
-                                    case 'D': minal_cursor_move(m, SDL_min(m->config.n_cols-1, SDL_max(0, m->cursor.col - n)), m->cursor.row);break;
-                                }
-                            } else {
-                                printf("<invalid move: %c:%s>",cmd_id, command.data+2);
-                            }
-                            continue;
-                        }
-                        default: {
-                            printf("<unhandled:");
-                            ansi_debug(command.data,command.len);
-                            printf(">");
-                            continue;
-                        }
-                    }
-
-                // #ifdef DEBUG
-                //     printf("\033[40;32m<(%zu):", command.len);
-                //     ansi_debug(command.data,command.len);
-                //     printf(">\033[0m");
-                // #endif
-                } else {
-                    printf("<INVALID ESCAPE>");
-                }
+                minal_parse_ansi(m, &view);
+                // size_t skip;
+                // if(ansi_find_cmd_end(view.data-1,view.len+1,&skip)) {
+                //     StringView command = (StringView){ .data = view.data-1, .len = skip };
+                //     view.data += command.len-1;
+                //     view.len  -=  command.len-1;
+                //
+                //     // ansi_debug(command.data,command.len);
+                //
+                //     char cmd_id = sv_last(&command);
+                //     switch(cmd_id) {
+                //         case 'm': {
+                //             StringView arg;
+                //             // printf("<mode: ");
+                //             // while(ansi_split_args(command.data+2, command.len-3, &arg.data, &arg.len)) {
+                //             //     printf("%.*s ", (int)arg.len, arg.data);
+                //             // }
+                //             // printf(">");
+                //             continue;
+                //         }
+                //         case 'J': minal_erase_in_display(m, command.len == 3 ? 0 : command.data[2] - '0' ); continue;
+                //         case 'K': minal_erase_in_line   (m, command.len == 3 ? 0 : command.data[2] - '0' ); continue;
+                //         case 'H': {
+                //             int row,col;
+                //             ansi_split_int_args(command.data+2, command.len-3,&row,1);
+                //             ansi_split_int_args(NULL, command.len-3,&col,1);
+                //             size_t X = SDL_min(m->config.n_cols-1, SDL_max(0,col-1));
+                //             size_t Y = SDL_min(m->config.n_rows-1, SDL_max(0,row-1));
+                //             minal_cursor_move(m, X,Y);
+                //             // printf("<move: %zu,%zu | %d ,%d>",X,Y,col,row);
+                //             continue;
+                //         }
+                //         case 'l': case 'h': {
+                //             //TODO: handle options
+                //             // printf("<enable: %.*s>", (int)command.len-2, command.data+2); 
+                //             continue;
+                //         }
+                //         case 'A': case 'B': case 'C': case 'D': {
+                //             int n = command.len == 3 ? 1: ansi_str_to_int( command.data+2, command.len-3 , -1);
+                //             if(n != -1) {
+                //                 switch(cmd_id) {
+                //                     case 'A': minal_cursor_move(m, m->cursor.col, SDL_min(m->config.n_rows-1, SDL_max(0, m->cursor.row - n)));break;
+                //                     case 'B': minal_cursor_move(m, m->cursor.col, SDL_min(m->config.n_rows-1, SDL_max(0, m->cursor.row + n)));break;
+                //                     case 'C': minal_cursor_move(m, SDL_min(m->config.n_cols-1, SDL_max(0, m->cursor.col + n)), m->cursor.row);break;
+                //                     case 'D': minal_cursor_move(m, SDL_min(m->config.n_cols-1, SDL_max(0, m->cursor.col - n)), m->cursor.row);break;
+                //                 }
+                //             } else {
+                //                 printf("<invalid move: %c:%s>",cmd_id, command.data+2);
+                //             }
+                //             continue;
+                //         }
+                //         default: {
+                //             printf("<unhandled:");
+                //             ansi_debug(command.data,command.len);
+                //             printf(">");
+                //             continue;
+                //         }
+                //     }
+                //
+                // // #ifdef DEBUG
+                // //     printf("\033[40;32m<(%zu):", command.len);
+                // //     ansi_debug(command.data,command.len);
+                // //     printf(">\033[0m");
+                // // #endif
+                // } else {
+                //     printf("<INVALID ESCAPE>");
+                // }
                 continue;
             }
         }
@@ -1545,15 +1541,16 @@ void minal_receiver(Minal* m)
         ansi_debug(view.data-1,n);
         view.data += n - 1;
         view.len  -= n - 1;
-        
         Cell cell = (Cell) { .content = content, .style = m->cursor.style };
         minal_insert_at(m, x, y, cell);
-        // if (ch == ESC) {
-        // #ifdef DEBUG 
-        //     StringView before = view;
-        // #endif
-        //
-        // minal_parse_ansi(m, &view);
+
+        size_t next_col = m->cursor.col + 1;
+        size_t next_row = m->cursor.row;
+        if (next_col == m->config.n_cols) {
+            next_row += m->autowrap;
+            next_col = 0;
+        }
+        minal_cursor_move(m, next_col, next_row);
         //
         // #ifdef DEBUG
         //     debug("ESC ");
@@ -1575,22 +1572,6 @@ void minal_receiver(Minal* m)
         // int n = utf8_to_utf32((uint8_t*)view.data - 1, &content);
         // view.data += n - 1;
         // view.len  -= n - 1;
-        // if (m->autowrap) {
-        //     if (m->cursor.col == m->config.n_cols - 1) {
-        //         minal_carriageret(m);
-        //         minal_linefeed(m);
-        // if (m->cursor.col == m->config.n_cols) {
-        //     if (!m->autowrap) {
-        //         minal_cursor_move(m, 0, m->cursor.row);
-        //     } else {
-        //         minal_linefeed(m);
-        //         minal_carriageret(m);
-        //     }
-        // } else {
-        //     size_t new_col = (x+1) % m->config.n_cols;
-        //     minal_cursor_move(m, new_col, m->cursor.row);
-        //     minal_cursor_move(m, m->cursor.col + 1, m->cursor.row);
-        // }
     }
 
     if(offset > 0) printf("\n");

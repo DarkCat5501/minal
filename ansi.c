@@ -219,7 +219,8 @@ handle_vt100_special:
   if(out_len) *out_len = strlen(VT100_Specials_Map[spc]);
   return true;
 
-handle_c1:
+handle_c1:;
+
   size_t C1_len = (ctr != C1_Control_Invalid) ? strlen(C1_Controls_Map[ctr]): 2;
   switch(ctr) {
     case C1_Control_Invalid:
