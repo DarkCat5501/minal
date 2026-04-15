@@ -1,0 +1,28 @@
+#!/usr/bin/zsh
+
+# prints the hexadecimal and text representations
+# for every ANSI escape sequence supported by
+# the terminal passed as the first positional argument
+# or the one defined in $TERM if no argument is passed.
+#
+# ./termescapes "st-256color"
+# // prints escapes for st terminal
+#
+# ./termescapes
+# // prints escapes for whatever is on $TERM
+
+
+local t
+if [ $# -lt 1 ] ; then
+    t=$TERM;
+else
+    t=$1;
+fi
+
+cmds=$(infocmp -1 -T $t| tail -n +3 | sed -E 's/\s*([^=^#]*).*,$/\1/g')
+echo "----------------- $t ----------------------"
+for cmd (${(f)cmds}); do
+    echo "$cmd: "
+    builtin echoti $cmd | xxd 
+    echo "---"
+done

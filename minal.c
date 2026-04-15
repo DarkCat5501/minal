@@ -21,7 +21,8 @@ void minal_spawn_shell(Minal *m)
             path = defaultshell;
         setenv("SHELL", path, true);
 
-        setenv("TERM", "vt100", true);
+        // setenv("TERM", "minal-256color", true);
+        // setenv("TERM", "vt100", true);
         // setenv("TERM", "xterm", true);
         // setenv("TERM", "dumb", true);
 
@@ -560,7 +561,7 @@ void minal_parse_ansi_csi(Minal* m, StringView* bytes)
             int opt = argc > 0 ? argv[0] : 1;
 
             size_t new_col;
-            if (m->cursor.col + opt >= m->config.n_cols) {
+            if (m->cursor.col + opt > m->config.n_cols) {
                 new_col = m->config.n_cols - 1;
             } else {
                 new_col = m->cursor.col + opt;
@@ -1407,17 +1408,24 @@ void minal_delete_chars(Minal* m, size_t n)
 {
     size_t row = m->cursor.row;
     size_t col = m->cursor.col;
-    size_t len = m->lines.items[row].len;
+    size_t len = m->config.n_cols;
     if (col >= len) {
         return;
     }
+    //  0                  col                    len - 1
+    //  v                  v                      v
+    // [###########################################]
+    //                     |______________________|
+    //                                 V
+    //                          (len - 1) - (col) + 1 = len - col - 1 + 1 = len - col
 
     n = MIN(n, len - col);
     Cell* dst = m->lines.items[row].items + col;
     Cell* src =  dst + n;
-    size_t dif = len - (col + n);
-    memmove(dst, src, dif);
-    m->lines.items[row].len -= n;
+    if (col + n < len) {
+        size_t dif = len - (col + n);
+        memmove(dst, src, dif);
+    }
 }
 
 void minal_linefeed(Minal* m)
@@ -1481,7 +1489,9 @@ void minal_receiver(Minal* m)
     fclose(f);
 #endif
 
+    char* prev;
     while (view.len > 0) {
+        prev = (char*)view.data;
         uint8_t ch = (uint8_t)sv_chop_left(&view);
 
         size_t x   = m->cursor.col;
@@ -1524,12 +1534,10 @@ void minal_receiver(Minal* m)
                 size_t ncols = m->config.n_cols;
                 minal_cursor_move(m, MOD(x - 1, ncols), m->cursor.row);
             } else {
-                if (x > 0) {
+                if (x > 0)
                     minal_cursor_move(m, x - 1, m->cursor.row);
-                } else {
-                    size_t last_col = m->config.n_cols - 1;
-                    minal_cursor_move(m, last_col, m->cursor.row - 1);
-                }
+                else
+                    minal_cursor_move(m, m->config.n_cols - 1, m->cursor.row - 1);
             }
 
             continue;

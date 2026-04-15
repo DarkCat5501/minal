@@ -91,7 +91,8 @@
 
 #define DEFAULT_FONT_SIZE   18.0f
 #define DEFAULT_DISPLAY_DPI 96
-#define DEFAULT_N_COLS      90
+// #define DEFAULT_N_COLS      90
+#define DEFAULT_N_COLS      120
 #define DEFAULT_N_ROWS      30
 
 #define FPS    144
