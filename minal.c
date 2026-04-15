@@ -1487,7 +1487,7 @@ void minal_receiver(Minal* m)
                             // }
                             // printf(">");
                             continue;
-                        } 
+                        }
                         case 'J': minal_erase_in_display(m, command.len == 3 ? 0 : command.data[2] - '0' ); continue;
                         case 'K': minal_erase_in_line   (m, command.len == 3 ? 0 : command.data[2] - '0' ); continue;
                         case 'H': {
