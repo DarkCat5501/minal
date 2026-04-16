@@ -1,88 +1,18 @@
 #include "minal.h"
+#include <SDL3/SDL_rect.h>
 
-#define MOD(a, b) ((((a) % (b)) + (b)) % (b))
+/*******************************************************************************
+ *                                                                             *
+ *                    APPLICATION STARTUP/SHUTDOWN                             *
+ *                                                                             *
+ ******************************************************************************/
 
-void minal_spawn_shell(Minal *m) 
+int main(void)
 {
-    int master_fd;
-    int slave_fd;
-    if (openpty(&master_fd, &slave_fd, NULL, NULL, NULL) == -1) {
-        printf("ERROR: openpty failed: %s\n", strerror(errno));
-        exit(1);
-    };
-
-    m->shell_pid = fork();
-    if (m->shell_pid == 0) {
-        login_tty(slave_fd);
-
-        char *path = "/usr/bin/bash";
-        char *defaultshell = getenv("SHELL");
-        if (defaultshell != NULL)
-            path = defaultshell;
-        setenv("SHELL", path, true);
-
-        // setenv("TERM", "minal-256color", true);
-        // setenv("TERM", "vt100", true);
-        // setenv("TERM", "xterm", true);
-        // setenv("TERM", "dumb", true);
-
-        // setenv("PS1",  "\e[32m\xE2\x86\x92\e[m ", true);
-        // setenv("PROMPT",  "\e[32m\xE2\x86\x92\e[m ", true);
-        // setenv("PS1", "➜ ", true);
-        // setenv("PS1",  "\e[32m\xE2\x9E\x9C\e[m ", true);
-        // setenv("PS1",  "$ ", true);
-
-        char cols[10]; sprintf(cols, "%d", m->config.n_cols);
-        char rows[10]; sprintf(rows, "%d", m->config.n_rows);
-        setenv("COLUMNS", cols, true);
-        setenv("LINES",   rows, true);
-
-        char *argv[] = {path, NULL};
-        if (execve(path, argv, environ) == -1) {
-            printf("ERROR: execv: %s\n", strerror(errno));
-            exit(1);
-        };
-    }
-    m->master_fd = master_fd;
-    m->slave_fd = slave_fd;
-}
-
-void minal_kill_shell(Minal* m)
-{
-    if (m->shell_pid == -1) {
-        return;
-    }
-
-    int err = kill(m->shell_pid, 0);
-    if (err != 0) {
-        printf("ERROR: cant send signal to shell process: %s\n", strerror(errno));
-        return;
-    }
-
-    err = kill(m->shell_pid, SIGHUP);
-    if (err == -1) {
-        printf("ERROR: kill shell failed: %s\n", strerror(errno));
-        return;
-    }
-    minal_check_shell(m);
-}
-
-void minal_check_shell(Minal *m) {
-    int status;
-    pid_t result = waitpid(m->shell_pid, &status, WNOHANG);
-    if (result == -1) {
-        printf("ERROR: check shell: waitpid: %s\n", strerror(errno));
-        return;
-    }
-
-    if (result == 0) return;
-
-    if (result == m->shell_pid) {
-        if (WIFEXITED(status) || WIFSIGNALED(status)) {
-            m->run = false;
-            m->shell_pid = -1;
-        }
-    }
+    Minal m = minal_init();
+    minal_run(&m);
+    minal_finish(&m);
+    return 0;
 }
 
 Minal minal_init()
@@ -98,8 +28,21 @@ Minal minal_init()
     m.config.n_rows      = DEFAULT_N_ROWS;
     m.config.display_dpi = DEFAULT_DISPLAY_DPI;
 
-    m.reg_top = 0;
-    m.reg_bot = m.config.n_rows - 1;
+    m.scroll_reg = (Region){
+        .start    = 0,
+        .end      = m.config.n_rows,
+        .absolute = false,
+    };
+    m.above_reg = (Region){
+        .start    = 0,
+        .end      = 0,
+        .absolute = true,
+    };
+    m.below_reg = (Region){
+        .start    = m.config.n_rows - 1,
+        .end      = m.config.n_rows - 1,
+        .absolute = true,
+    };
 
     minal_spawn_shell(&m);
     m.run = true;
@@ -145,9 +88,6 @@ Minal minal_init()
     }
     m.lines = lines;
     
-    StringBuilder screen = sb_with_cap(m.config.n_rows * m.config.n_cols * 4);
-    m.screen = screen;
-
     m.row_offset  = 0;
 
     m.cursor = (Cursor) {
@@ -166,6 +106,150 @@ Minal minal_init()
     return m;
 }
 
+void minal_spawn_shell(Minal *m)
+{
+    int master_fd;
+    int slave_fd;
+    if (openpty(&master_fd, &slave_fd, NULL, NULL, NULL) == -1) {
+        printf("ERROR: openpty failed: %s\n", strerror(errno));
+        exit(1);
+    };
+
+    m->shell_pid = fork();
+    if (m->shell_pid == 0) {
+        login_tty(slave_fd);
+
+        char *path = "/usr/bin/bash";
+        char *defaultshell = getenv("SHELL");
+        if (defaultshell != NULL)
+            path = defaultshell;
+        setenv("SHELL", path, true);
+
+        // setenv("TERM", "minal-256color", true);
+        // setenv("TERM", "vt100", true);
+        // setenv("TERM", "xterm", true);
+        // setenv("TERM", "dumb", true);
+        setenv("TERM", "st-256color", true);
+
+        // setenv("PS1",  "\e[32m\xE2\x86\x92\e[m ", true);
+        // setenv("PROMPT",  "\e[32m\xE2\x86\x92\e[m ", true);
+        // setenv("PS1", "➜ ", true);
+        // setenv("PS1",  "\e[32m\xE2\x9E\x9C\e[m ", true);
+        // setenv("PS1",  "$ ", true);
+
+        char cols[10]; sprintf(cols, "%d", m->config.n_cols);
+        char rows[10]; sprintf(rows, "%d", m->config.n_rows);
+        setenv("COLUMNS", cols, true);
+        setenv("LINES",   rows, true);
+
+        char *argv[] = {path, NULL};
+        if (execve(path, argv, environ) == -1) {
+            printf("ERROR: execv: %s\n", strerror(errno));
+            exit(1);
+        };
+    }
+    m->master_fd = master_fd;
+    m->slave_fd = slave_fd;
+}
+
+void minal_kill_shell(Minal* m)
+{
+    if (m->shell_pid == -1) {
+        return;
+    }
+
+    int err = kill(m->shell_pid, 0);
+    if (err != 0) {
+        printf("ERROR: cant send signal to shell process: %s\n", strerror(errno));
+        return;
+    }
+
+    err = kill(m->shell_pid, SIGHUP);
+    if (err == -1) {
+        printf("ERROR: kill shell failed: %s\n", strerror(errno));
+        return;
+    }
+    minal_check_shell(m);
+}
+
+void minal_check_shell(Minal *m) 
+{
+    int status;
+    pid_t result = waitpid(m->shell_pid, &status, WNOHANG);
+    if (result == -1) {
+        printf("ERROR: check shell: waitpid: %s\n", strerror(errno));
+        return;
+    }
+
+    if (result == 0) return;
+
+    if (result == m->shell_pid) {
+        if (WIFEXITED(status) || WIFSIGNALED(status)) {
+            m->run = false;
+            m->shell_pid = -1;
+        }
+    }
+}
+
+void minal_finish(Minal *m)
+{
+    for (size_t i = 0; i < m->lines.len; ++i) {
+        vec_free(&m->lines.items[i]);
+    }
+    vec_free(&m->lines);
+
+    assert(SDL_StopTextInput(m->window));
+    TTF_CloseFont(m->config.font);
+
+    TTF_DestroyRendererTextEngine(m->text_engine);
+    TTF_DestroyText(m->text);
+
+    SDL_DestroyRenderer(m->rend);
+    SDL_DestroyWindow(m->window);
+
+    TTF_Quit();
+    SDL_Quit();
+
+    minal_kill_shell(m);
+
+    close(m->master_fd);
+    close(m->slave_fd);
+}
+
+void minal_run(Minal* m)
+{
+    while (m->run) {
+        int start = SDL_GetTicks();
+
+        SDL_Event event;
+        while (SDL_PollEvent(&event)) {
+            minal_transmitter(m, &event);
+        }
+
+        SDL_SetRenderDrawColor(m->rend, DEFAULT_STYLE.bg_color.r, DEFAULT_STYLE.bg_color.g, DEFAULT_STYLE.bg_color.b, DEFAULT_STYLE.bg_color.a);
+        SDL_RenderClear(m->rend);
+
+        minal_receiver(m);
+        minal_render_cursor(m);
+        minal_render_text(m);
+
+        SDL_RenderPresent(m->rend);
+        minal_check_shell(m);
+
+        int elapsed = SDL_GetTicks() - start;
+        int max_delay = 1000 / FPS;
+        if (elapsed < max_delay) SDL_Delay(max_delay - elapsed);
+    }
+}
+
+
+/*******************************************************************************
+ *                                                                             *
+ *                    ANSI ESCAPE SEQUENCES                                    *
+ *                                                                             *
+ ******************************************************************************/
+
+
 bool isparameter(uint8_t byte)
 {
     return 0x30 <= byte && byte <= 0x3f;
@@ -179,6 +263,140 @@ bool isintermediate(uint8_t byte)
 bool isfinal(uint8_t byte)
 {
     return 0x40 <= byte && byte <= 0x7E;
+}
+
+void minal_parse_ansi(Minal* m, StringView* bytes)
+{
+    uint8_t b = sv_chop_left(bytes);
+    switch (b) {
+        case DESIGNATE_G0_CHARSET: {
+            b = sv_chop_left(bytes);
+            switch (b) {
+                case G0CHSET_UK:
+                case G0CHSET_US:
+                case G0CHSET_FINNISH_1:
+                case G0CHSET_FINNISH_2:
+                case G0CHSET_SWEDISH_1:
+                case G0CHSET_SWEDISH_2:
+                case G0CHSET_GERMAN:
+                case G0CHSET_FR_CANADIAN_1:
+                case G0CHSET_FR_CANADIAN_2:
+                case G0CHSET_FRENCH_1:
+                case G0CHSET_FRENCH_2:
+                case G0CHSET_ITALIAN:
+                case G0CHSET_SPANISH:
+                case G0CHSET_DUTCH:
+                case G0CHSET_SWISS:
+                case G0CHSET_NORWEGIAN_DANISH_1:
+                case G0CHSET_NORWEGIAN_DANISH_2:
+                case G0CHSET_NORWEGIAN_DANISH_3:
+                case G0CHSET_DEC_SPECIAL:
+                case G0CHSET_SUPPLEMENTAL:
+                // case G0CHSET_USER_PREFERRED:
+                case G0CHSET_DEC_TECHNICAL:
+                case G0CHSET_JIS_KATAKANA:
+                case G0CHSET_JIS_ROMAN:
+                    printf("IGNORE DESIGNATE GO CHARSET + %c\n", b); break;
+                case G0CHSET_PREFIX_1:
+                    b = sv_chop_left(bytes);
+                    switch (b) {
+                        case G0CHSET_GREEK:
+                        case G0CHSET_DEC_HEBREW:
+                        case G0CHSET_DEC_GREEK:
+                            printf("IGNORE DESIGNATE GO CHARSET + PREFIX_1 + %c\n", b); break;
+                    };
+                case G0CHSET_PREFIX_2: {
+                    b = sv_chop_left(bytes);
+                    switch (b) {
+                        case G0CHSET_PORTUGUESE:
+                        case G0CHSET_HEBREW_PREFIX:
+                        case G0CHSET_DEC_TURKISH:
+                        case G0CHSET_DEC_SUP_GRAPHICS:
+                        case G0CHSET_SCS_NRCS:
+                            printf("IGNORE DESIGNATE GO CHARSET + PREFIX_2 + %c\n", b); break;
+                    }
+                }
+                
+                case G0CHSET_PREFIX_3:
+                    b = sv_chop_left(bytes);
+                    switch (b) {
+                        case G0CHSET_DEC_CYRILLIC:
+                        case G0CHSET_DEC_RUSSIAN:
+                            printf("IGNORE DESIGNATE GO CHARSET + PREFIX_3 + %c\n", b); break;
+                    }
+            }
+            return;
+        }
+
+        case DEC_SAVE_CURSOR: {
+            sv_chop_left(bytes);
+            m->saved_cursor = m->cursor;
+            return;
+        }
+
+        case DEC_RESTORE_CURSOR: {
+            sv_chop_left(bytes);
+            m->cursor = m->saved_cursor;
+            return;
+        }
+
+        case INDEX: {
+            if (m->cursor.row < m->config.n_rows) minal_cursor_move(m, m->cursor.col, m->cursor.row + 1);
+            else                                  minal_pagedown(m, 1);
+            return;
+        }
+
+        case REVERSE_INDEX: {
+            if (m->cursor.row > 0) minal_cursor_move(m, m->cursor.col, m->cursor.row - 1);
+            else                   minal_pageup(m, 1);
+            return;
+        }
+
+        case FULL_RESET: {
+            printf("TODO: C1 CODE: FULL_RESET\n");
+            return;
+        }
+
+        case DEC_KEYPAD_APPLICATION_MODE: {
+            m->keypad_application = true;
+            return;
+        }
+
+        case DEC_KEYPAD_NORMAL_MODE: {
+            m->keypad_application = false;
+            return;
+        }
+
+        case DEVICE_CONTROL_STRING: {
+            printf("TODO: DEVICE_CONTROL_STRING\n");
+            while(sv_chop_left(bytes) != ESC && sv_first(bytes) != STRING_TERMINATOR);
+            sv_chop_left(bytes);
+            return;
+        }
+
+        case CONTROL_SEQUENCE_INTRODUCER: {
+            minal_parse_ansi_csi(m, bytes);
+            return;
+        }
+
+        case STRING_TERMINATOR: {
+            printf("ERROR: ISOLATED STRING_TERMINATOR\n");
+        }; break;
+
+        case OPERATING_SYSTEM_COMMAND: {
+            minal_parse_ansi_osc(m, bytes);
+		}; break;
+
+        case PRIVACY_MESSAGE: {
+            printf("TODO: PRIVACY_MESSAGE\n");
+		}; break;
+
+        case APPLICATION_PROGRAM_COMMAND: {
+            printf("TODO: APPLICATION_PROGRAM_COMMAND\n");
+		}; break;
+
+        default: printf("UNKNOWN C1 CODE ESCAPE SEQUENCE: 0b%08b | 0x%02X (%c)\n", b, b, b);
+     }
 }
 
 void minal_parse_ansi_args(Minal* m, StringView* bytes, int* argc, int argv[])
@@ -538,8 +756,8 @@ void minal_parse_ansi_csi(Minal* m, StringView* bytes)
 
             size_t new_row;
 
-            if (m->cursor.row < opt || m->cursor.row - opt <= m->reg_top) {
-                new_row = m->reg_top;
+            if (m->cursor.row < opt || m->cursor.row - opt <= m->scroll_reg.start) {
+                new_row = m->scroll_reg.start;
             } else {
                 new_row = m->cursor.row - opt;
             }
@@ -549,8 +767,8 @@ void minal_parse_ansi_csi(Minal* m, StringView* bytes)
         case CURSOR_DOWN: {
             int opt = argc > 0 ? argv[0] : 1;
             size_t new_row;
-            if (m->cursor.row + opt >= m->reg_bot) {
-                new_row = m->reg_bot - 1;
+            if (m->cursor.row + opt >= m->scroll_reg.end) {
+                new_row = m->scroll_reg.end - 1;
             } else {
                 new_row = m->cursor.row + opt;
             }
@@ -726,10 +944,17 @@ void minal_parse_ansi_csi(Minal* m, StringView* bytes)
                 bot = m->config.n_rows - 1;
             }
 
-            m->reg_top = top;
-            m->reg_bot = bot;
+            m->scroll_reg.start = top;
+            m->scroll_reg.end   = bot + 1;
+
+            m->above_reg.start = m->row_offset;
+            m->above_reg.end = m->row_offset + top;
+
+            m->below_reg.start = m->row_offset + bot + 1;
+            m->below_reg.end   = m->row_offset + m->config.n_rows;
+
             minal_cursor_move(m, 0, 0);
-            minal_erase_in_display(m, 2);
+            minal_erase_in_display(m, ERASE_IN_DISPLAY_ALL);
         }; break;
 
         case DEC_SCROLL_LEFRIG_MARGIN: { 
@@ -751,191 +976,167 @@ void minal_parse_ansi_csi(Minal* m, StringView* bytes)
     return;
 }
 
-void minal_parse_ansi(Minal* m, StringView* bytes)
+void minal_erase_in_line(Minal* m, size_t opt)
+//////////////////////////////////////////////
+//  X = cursor.col                          //
+//  opt=0                                   //
+//               start             end      //
+//               v                 v        //
+//  [_, _, _, _, X, _, _, _, _, _, _]       //
+//                                          //
+//  opt=1                                   //
+//   start       end                        //
+//   v           v                          //
+//  [_, _, _, _, X, _, _, _, _, _, _]       //
+//                                          //
+//  opt=2                                   //
+//   start                         end      //
+//   v                             v        //
+//  [_, _, _, _, X, _, _, _, _, _, _]       //
+//                                          //
+//////////////////////////////////////////////
 {
-    uint8_t b = sv_chop_left(bytes);
-    switch (b) {
-        case DESIGNATE_G0_CHARSET: {
-            b = sv_chop_left(bytes);
-            switch (b) {
-                case G0CHSET_UK:
-                case G0CHSET_US:
-                case G0CHSET_FINNISH_1:
-                case G0CHSET_FINNISH_2:
-                case G0CHSET_SWEDISH_1:
-                case G0CHSET_SWEDISH_2:
-                case G0CHSET_GERMAN:
-                case G0CHSET_FR_CANADIAN_1:
-                case G0CHSET_FR_CANADIAN_2:
-                case G0CHSET_FRENCH_1:
-                case G0CHSET_FRENCH_2:
-                case G0CHSET_ITALIAN:
-                case G0CHSET_SPANISH:
-                case G0CHSET_DUTCH:
-                case G0CHSET_SWISS:
-                case G0CHSET_NORWEGIAN_DANISH_1:
-                case G0CHSET_NORWEGIAN_DANISH_2:
-                case G0CHSET_NORWEGIAN_DANISH_3:
-                case G0CHSET_DEC_SPECIAL:
-                case G0CHSET_SUPPLEMENTAL:
-                // case G0CHSET_USER_PREFERRED:
-                case G0CHSET_DEC_TECHNICAL:
-                case G0CHSET_JIS_KATAKANA:
-                case G0CHSET_JIS_ROMAN:
-                    printf("IGNORE DESIGNATE GO CHARSET + %c\n", b); break;
-                case G0CHSET_PREFIX_1:
-                    b = sv_chop_left(bytes);
-                    switch (b) {
-                        case G0CHSET_GREEK:
-                        case G0CHSET_DEC_HEBREW:
-                        case G0CHSET_DEC_GREEK:
-                            printf("IGNORE DESIGNATE GO CHARSET + PREFIX_1 + %c\n", b); break;
-                    };
-                case G0CHSET_PREFIX_2: {
-                    b = sv_chop_left(bytes);
-                    switch (b) {
-                        case G0CHSET_PORTUGUESE:
-                        case G0CHSET_HEBREW_PREFIX:
-                        case G0CHSET_DEC_TURKISH:
-                        case G0CHSET_DEC_SUP_GRAPHICS:
-                        case G0CHSET_SCS_NRCS:
-                            printf("IGNORE DESIGNATE GO CHARSET + PREFIX_2 + %c\n", b); break;
-                    }
-                }
-                
-                case G0CHSET_PREFIX_3:
-                    b = sv_chop_left(bytes);
-                    switch (b) {
-                        case G0CHSET_DEC_CYRILLIC:
-                        case G0CHSET_DEC_RUSSIAN:
-                            printf("IGNORE DESIGNATE GO CHARSET + PREFIX_3 + %c\n", b); break;
-                    }
-            }
-            return;
-        }
+    size_t x    = m->cursor.col;
+    size_t y    = minal_cursor2absol(m);
+    Line* line  = &m->lines.items[y];
+    if (line->len == 0) return;
 
-
-        case DEC_SAVE_CURSOR: {
-            sv_chop_left(bytes);
-            m->saved_cursor = m->cursor;
-            return;
-        }
-
-        case DEC_RESTORE_CURSOR: {
-            sv_chop_left(bytes);
-            m->cursor = m->saved_cursor;
-            return;
-        }
-
-        case INDEX: {
-            if (m->cursor.row < m->config.n_rows) minal_cursor_move(m, m->cursor.col, m->cursor.row + 1);
-            else                                  minal_pagedown(m, 1);
-            return;
-        }
-
-        case REVERSE_INDEX: {
-            if (m->cursor.row > 0) minal_cursor_move(m, m->cursor.col, m->cursor.row - 1);
-            else                   minal_pageup(m, 1);
-            return;
-        }
-
-        case FULL_RESET: {
-            printf("TODO: C1 CODE: FULL_RESET\n");
-            return;
-        }
-
-        case DEC_KEYPAD_APPLICATION_MODE: {
-            m->keypad_application = true;
-            return;
-        }
-
-        case DEC_KEYPAD_NORMAL_MODE: {
-            m->keypad_application = false;
-            return;
-        }
-
-        case DEVICE_CONTROL_STRING: {
-            printf("TODO: DEVICE_CONTROL_STRING\n");
-            while(sv_chop_left(bytes) != ESC && sv_first(bytes) != STRING_TERMINATOR);
-            sv_chop_left(bytes);
-            return;
-        }
-
-        case CONTROL_SEQUENCE_INTRODUCER: {
-            minal_parse_ansi_csi(m, bytes);
-            return;
-        }
-
-        case STRING_TERMINATOR: {
-            printf("ERROR: ISOLATED STRING_TERMINATOR\n");
+    size_t start;
+    size_t end;
+    switch (opt) {
+        case ERASE_IN_LINE_LEFT: {
+            start = 0;
+            end   = x;
         }; break;
 
-        case OPERATING_SYSTEM_COMMAND: {
-            minal_parse_ansi_osc(m, bytes);
-		}; break;
+        case ERASE_IN_LINE_ALL: {
+            start = 0;
+            end   = m->config.n_cols - 1;
+        }; break;
 
-        case PRIVACY_MESSAGE: {
-            printf("TODO: PRIVACY_MESSAGE\n");
-		}; break;
-
-        case APPLICATION_PROGRAM_COMMAND: {
-            printf("TODO: APPLICATION_PROGRAM_COMMAND\n");
-		}; break;
-
-        default: printf("UNKNOWN C1 CODE ESCAPE SEQUENCE: 0b%08b | 0x%02X (%c)\n", b, b, b);
-     }
-}
-
-SDL_FRect minal_cursor_to_rect(Minal* m)
-{
-    return (SDL_FRect) {
-        .x = m->cursor.col * m->config.cell_width,
-        .y = m->cursor.row * m->config.cell_height,
-        .w = m->config.cell_width,
-        .h = m->config.cell_height,
-    };
-}
-
-void minal_cursor_move(Minal* m, int new_col, int new_row)
-{
-    assert(0 <= new_row && new_row < m->config.n_rows);
-    assert(0 <= new_col && new_col <= m->config.n_cols);
-    m->cursor.col = new_col;
-    m->cursor.row = new_row;
-}
-
-void minal_write_str(Minal* m, const char* s)
-{
-    size_t n = strlen(s);
-    write(m->master_fd, s, n);
-}
-
-void minal_write_char(Minal* m, int c)
-{
-    write(m->master_fd, &c, 1);
-}
-
-int minal_read_nonblock(Minal* m, char* buf, size_t n)
-{
-    int oldf = fcntl(m->master_fd, F_GETFL, 0);
-    assert(oldf != -1);
-    int ret = fcntl(m->master_fd, F_SETFL, oldf | O_NONBLOCK);
-    assert(ret != -1);
-    int res = read(m->master_fd, buf, n);
-    if (res == -1) {
-        if (errno != EAGAIN && errno != EWOULDBLOCK) {
-            printf("ERROR: read nonblock: %s\n", strerror(errno));
-            exit(1);
-        }
-        return 0;
+        case ERASE_IN_LINE_RIGHT:
+        default: {
+            start = x;
+            end   = m->config.n_cols - 1;
+        }; break;
     }
-    return res;
+
+    if (start > end) return;
+
+    for (size_t i = start; i <= end; ++i) {
+        line->items[i] = (Cell) {
+            .content = ' ',
+            .style = m->cursor.style,
+        };
+    }
 }
 
-void minal_new_line(Minal* m)
+void minal_erase_in_display(Minal* m, size_t opt)
 {
-    Line new_line = minal_line_alloc(m);
-    vec_append(&m->lines, new_line);
+    size_t x    = m->cursor.col;
+    size_t y    = m->cursor.row;
+    size_t last_row = m->config.n_rows - 1;
+
+    size_t start;
+    size_t end;
+
+    if (opt == ERASE_IN_DISPLAY_SAVED) {
+        m->row_offset = 0;
+
+        for (int i = 0; i < m->lines.len; ++i) {
+            Cell def = minal_default_cell(m);
+            for (size_t j = 0; j < m->config.n_cols; ++j) 
+                m->lines.items[i].items[j] = def;
+        }
+
+        m->lines.len = m->config.n_rows;
+        minal_cursor_move(m, 0, 0);
+        return;
+    }
+
+    switch (opt) {
+        case ERASE_IN_DISPLAY_ABOVE: {
+            start = 0;
+            end   = y;
+        }; break; 
+
+        case ERASE_IN_DISPLAY_ALL: {
+            start = 0;
+            end   = last_row;
+        }; break;
+
+        case ERASE_IN_DISPLAY_BELOW:
+        default: {
+            start = y;
+            end   = last_row;
+        }; break;
+    }
+
+    for (size_t row = start; row <= end; ++row) {
+        if (row == y) {
+            minal_cursor_move(m, x, row);
+            minal_erase_in_line(m, MIN(opt, ERASE_IN_LINE_ALL));
+        } else {
+            minal_cursor_move(m, 0, row);
+            minal_erase_in_line(m, ERASE_IN_LINE_ALL);
+        }
+    }
+
+    if (opt == ERASE_IN_DISPLAY_ALL) {
+        minal_cursor_move(m, 0, 0);
+    } else {
+        minal_cursor_move(m, x, y);
+    }
+}
+
+
+void minal_delete_chars(Minal* m, size_t n)
+{
+    size_t row = m->cursor.row;
+    size_t col = m->cursor.col;
+    size_t len = m->config.n_cols;
+    if (col >= len) {
+        return;
+    }
+    //  0                  col                    len - 1
+    //  v                  v                      v
+    // [###########################################]
+    //                     |______________________|
+    //                                 V
+    //                          (len - 1) - (col) + 1 = len - col - 1 + 1 = len - col
+
+    n = MIN(n, len - col);
+    Cell* dst = m->lines.items[row].items + col;
+    Cell* src =  dst + n;
+    if (col + n < len) {
+        size_t dif = len - (col + n);
+        memmove(dst, src, dif);
+    }
+}
+
+void minal_linefeed(Minal* m)
+{
+    WhichRegion which = minal_cursor_in_region(m);
+    switch (which) {
+        case REGION_SCROLL: {
+            if (m->cursor.row + 1 >= m->scroll_reg.end) {
+                minal_new_line(m);
+                minal_pagedown(m, 1);
+            } else {
+                minal_cursor_move(m, m->cursor.col, m->cursor.row + 1);
+            }
+        } break;
+        case REGION_ABOVE: 
+        case REGION_BELOW: {
+            if (m->cursor.row < m->config.n_rows - 1) 
+                minal_cursor_move(m, m->cursor.col, m->cursor.row + 1);
+        } break;
+    }
+}
+
+void minal_carriageret(Minal* m)
+{
+    minal_cursor_move(m, 0, m->cursor.row);
 }
 
 void minal_pageup(Minal* m, size_t opt)
@@ -959,7 +1160,85 @@ void minal_pagedown(Minal* m, size_t opt)
     m->row_offset += opt;
 }
 
-SDL_Color minal_select_color_by_index(Minal* m, int idx)
+void minal_graphic_mode(Minal* m, int* argv, int argc)
+{
+    if (argc == 0) argv[argc++] = 0;
+    int i = 0; 
+    while (i < argc) {
+        SDL_Color clr;
+        enum {
+            TARGET_FG,
+            TARGET_BG,
+            TARGET_UL,
+        } target = 0;
+        int op = argv[i];
+        if ((SGR_NORMAL <= op && op <= SGR_CROSSED_OUT) ||
+           (SGR_DOUBLE_UNDERLINE <= op && op <= SGR_NOT_CROSSED_OUT)) {
+            minal_apply_style(m, op);
+            i++;
+            continue;
+        }
+
+        if (op == SGR_FG_EXTENDED_COLOR_PREFIX || 
+            op == SGR_BG_EXTENDED_COLOR_PREFIX
+        ) {
+            target = (
+                op == SGR_FG_EXTENDED_COLOR_PREFIX ? TARGET_FG : 
+                op == SGR_UL_EXTENDED_COLOR_PREFIX ? TARGET_UL :
+                TARGET_BG
+            );
+            if (i + 1 >= argc) {
+                clr = target == TARGET_BG ? BASE_COLORS[DEFAULT_BG_COLOR] : BASE_COLORS[DEFAULT_FG_COLOR];
+                goto setcolor;
+            };
+            i++;
+            if (argv[i] == 5) {
+                assert(i + 1 < argc);
+                int idx = argv[++i];
+                clr = minal_select_color_index(m, idx);
+                goto setcolor;
+            } else if (argv[i] == 2) {
+                assert(i + 3 < argc);
+                int r = argv[++i];
+                int g = argv[++i];
+                int b = argv[++i];
+                clr = minal_select_color_extended(m, r, g, b);
+                goto setcolor;
+            }
+        }
+
+        if ((SGR_FG_BLACK <= op        && op <= SGR_BG_DEFAULT) ||
+            (SGR_FG_BRIGHT_BLACK <= op && op <= SGR_BG_BRIGHT_WHITE))
+        {
+            target = (SGR_BG_BLACK <= op && op <= SGR_BG_DEFAULT) || 
+                 (SGR_BG_BRIGHT_BLACK <= op && op <= SGR_BG_BRIGHT_WHITE) ?
+                TARGET_BG : TARGET_FG;
+            clr = minal_select_color_base(m, op);
+            goto setcolor;
+        }
+
+    setcolor:
+        switch (target) {
+            case TARGET_BG: m->cursor.style.bg_color = clr; break;
+            case TARGET_FG: m->cursor.style.fg_color = clr; break;
+            case TARGET_UL: m->cursor.style.ul_color = clr; break;
+        }
+        i++;
+    }
+}
+
+SDL_Color minal_select_color_extended(Minal* m, int r, int g, int b)
+{
+    SDL_Color c = {
+        .r = r,
+        .g = g,
+        .b = b,
+        .a = 255,
+    };
+    return c;
+}
+
+SDL_Color minal_select_color_index(Minal* m, int idx)
 {
     SDL_Color clr;
 
@@ -995,18 +1274,7 @@ SDL_Color minal_select_color_by_index(Minal* m, int idx)
     return clr;
 }
 
-SDL_Color minal_select_color_extended(Minal* m, int r, int g, int b)
-{
-    SDL_Color c = {
-        .r = r,
-        .g = g,
-        .b = b,
-        .a = 255,
-    };
-    return c;
-}
-
-SDL_Color minal_select_color(Minal* m, int op)
+SDL_Color minal_select_color_base(Minal* m, int op)
 {
     switch (op) {
         case SGR_FG_BLACK:          { return BASE_COLORS[BLACK];            };
@@ -1147,722 +1415,7 @@ void minal_apply_style(Minal* m, int op)
     }
 }
 
-
-void minal_graphic_mode(Minal* m, int* argv, int argc)
-{
-    // NOTE: ESC CSI m is treated as ESC CSI 0 m
-    if (argc == 0) argv[argc++] = 0;
-    int i = 0; 
-    while (i < argc) {
-        SDL_Color clr;
-        enum {
-            TARGET_FG,
-            TARGET_BG,
-            TARGET_UL,
-        } target = 0;
-        int op = argv[i];
-        if ((SGR_NORMAL <= op && op <= SGR_CROSSED_OUT) ||
-           (SGR_DOUBLE_UNDERLINE <= op && op <= SGR_NOT_CROSSED_OUT)) {
-            minal_apply_style(m, op);
-            i++;
-            continue;
-        }
-
-        if (op == SGR_FG_EXTENDED_COLOR_PREFIX || 
-            op == SGR_BG_EXTENDED_COLOR_PREFIX
-        ) {
-            target = (
-                op == SGR_FG_EXTENDED_COLOR_PREFIX ? TARGET_FG : 
-                op == SGR_UL_EXTENDED_COLOR_PREFIX ? TARGET_UL :
-                TARGET_BG
-            );
-            if (i + 1 >= argc) {
-                clr = target == TARGET_BG ? BASE_COLORS[DEFAULT_BG_COLOR] : BASE_COLORS[DEFAULT_FG_COLOR];
-                goto setcolor;
-            };
-            i++;
-            if (argv[i] == 5) {
-                assert(i + 1 < argc);
-                int idx = argv[++i];
-                clr = minal_select_color_by_index(m, idx);
-                goto setcolor;
-            } else if (argv[i] == 2) {
-                assert(i + 3 < argc);
-                int r = argv[++i];
-                int g = argv[++i];
-                int b = argv[++i];
-                clr = minal_select_color_extended(m, r, g, b);
-                goto setcolor;
-            }
-        }
-
-        if ((SGR_FG_BLACK <= op        && op <= SGR_BG_DEFAULT) ||
-            (SGR_FG_BRIGHT_BLACK <= op && op <= SGR_BG_BRIGHT_WHITE))
-        {
-            target = (SGR_BG_BLACK <= op && op <= SGR_BG_DEFAULT) || 
-                 (SGR_BG_BRIGHT_BLACK <= op && op <= SGR_BG_BRIGHT_WHITE) ?
-                TARGET_BG : TARGET_FG;
-            clr = minal_select_color(m, op);
-            goto setcolor;
-        }
-
-    setcolor:
-        switch (target) {
-            case TARGET_BG: m->cursor.style.bg_color = clr; break;
-            case TARGET_FG: m->cursor.style.fg_color = clr; break;
-            case TARGET_UL: m->cursor.style.ul_color = clr; break;
-        }
-        i++;
-    }
-}
-
-size_t minal_cursor2absol(Minal* m)
-{
-    assert(m->cursor.row + m->row_offset < m->lines.len);
-    return m->cursor.row + m->row_offset;
-}
-
-Line minal_line_alloc(Minal* m)
-{
-    Line l = {0};
-    vec_expandto(&l, m->config.n_cols);
-    for (size_t i = 0; i < m->config.n_cols; ++i) 
-        vec_append(&l, default_cell(m));
-    return l;
-}
-
-void line_print(Line* line)
-{
-    printf("    Line : {\n");
-    printf("     cap:   %zu,\n", line->cap);
-    printf("     len:   %zu,\n", line->len);
-    printf("     items: [ \n");
-    for (size_t j = 0; j < line->len; ++j) {
-        uint8_t it = line->items[j].content;
-        printf("        - %08b | %02X (%c)\n", it, it, it);
-    }
-    printf("   ]}\n");
-}
-
-Cell default_cell(Minal *m)
-{
-    Cell c = {
-        .style = m->cursor.style,
-        .content = ' ',
-    };
-    return c;
-}
-
-Cell minal_at(Minal *m, size_t col, size_t row)
-{
-    assert(row >= 0 && row < m->lines.len);
-    assert(col >= 0 && col < m->lines.items[row].len);
-    return m->lines.items[row].items[col];
-}
-
-void minal_append(Minal* m, size_t row, Cell c)
-{
-    assert(row >= 0 && row < m->lines.len);
-    Line r = m->lines.items[row];
-    if (m->lines.items[row].len + 1 >= m->config.n_cols) {
-        return;
-    }
-    vec_append(&m->lines.items[row], c);
-}
-
-void minal_insert_at(Minal* m, size_t col, size_t row, Cell c)
-{
-    assert(row >= 0 && row < m->lines.len);
-    Line* l = &m->lines.items[row];
-    if (col >= m->config.n_cols) return;
-
-    Cell emptycell = {
-        .content = ' ',
-        .style   = m->cursor.style,
-    };
-    if (col >= l->len) {
-        int n = col - l->len;
-        for (int i = 0; i < n; ++i) minal_append(m, row, emptycell);
-        minal_append(m, row, c);
-        return;
-    }
-    l->items[col] = c;
-}
-
-void minal_erase_in_line(Minal* m, size_t opt)
-//////////////////////////////////////////////
-//  X = cursor.col                          //
-//  opt=0                                   //
-//               start             end      //
-//               v                 v        //
-//  [_, _, _, _, X, _, _, _, _, _, _]       //
-//                                          //
-//  opt=1                                   //
-//   start       end                        //
-//   v           v                          //
-//  [_, _, _, _, X, _, _, _, _, _, _]       //
-//                                          //
-//  opt=2                                   //
-//   start                         end      //
-//   v                             v        //
-//  [_, _, _, _, X, _, _, _, _, _, _]       //
-//                                          //
-//////////////////////////////////////////////
-{
-    size_t x    = m->cursor.col;
-    size_t y    = minal_cursor2absol(m);
-    Line* line  = &m->lines.items[y];
-    if (line->len == 0) return;
-
-    size_t start;
-    size_t end;
-    switch (opt) {
-        case ERASE_IN_LINE_LEFT: {
-            start = 0;
-            end   = x;
-        }; break;
-
-        case ERASE_IN_LINE_ALL: {
-            start = 0;
-            end   = m->config.n_cols - 1;
-        }; break;
-
-        case ERASE_IN_LINE_RIGHT:
-        default: {
-            start = x;
-            end   = m->config.n_cols - 1;
-        }; break;
-    }
-
-    if (start > end) return;
-
-    for (size_t i = start; i <= end; ++i) {
-        line->items[i] = (Cell) {
-            .content = ' ',
-            .style = m->cursor.style,
-        };
-    }
-}
-
-void minal_erase_in_display(Minal* m, size_t opt)
-{
-    size_t x    = m->cursor.col;
-    size_t y    = m->cursor.row;
-    size_t absy = minal_cursor2absol(m);
-    size_t last_row = m->config.n_rows - 1;
-
-    size_t start;
-    size_t end;
-
-    if (opt == ERASE_IN_DISPLAY_SAVED) {
-        m->row_offset = 0;
-
-        for (int i = 0; i < m->lines.len; ++i) {
-            Cell def = default_cell(m);
-            for (size_t j = 0; j < m->config.n_cols; ++j) 
-                m->lines.items[i].items[j] = def;
-        }
-
-        m->lines.len = m->config.n_rows;
-        minal_cursor_move(m, 0, 0);
-        return;
-    }
-
-    switch (opt) {
-        case ERASE_IN_DISPLAY_ABOVE: {
-            start = 0;
-            end   = y;
-        }; break; 
-
-        case ERASE_IN_DISPLAY_ALL: {
-            start = 0;
-            end   = last_row;
-        }; break;
-
-        case ERASE_IN_DISPLAY_BELOW:
-        default: {
-            start = y;
-            end   = last_row;
-        }; break;
-    }
-
-    for (size_t row = start; row <= end; ++row) {
-        if (row == y) {
-            minal_cursor_move(m, x, row);
-            minal_erase_in_line(m, MIN(opt, ERASE_IN_LINE_ALL));
-        } else {
-            minal_cursor_move(m, 0, row);
-            minal_erase_in_line(m, ERASE_IN_LINE_ALL);
-        }
-    }
-
-    if (opt == ERASE_IN_DISPLAY_ALL) {
-        minal_cursor_move(m, 0, 0);
-    } else {
-        minal_cursor_move(m, x, y);
-    }
-}
-
-
-void minal_delete_chars(Minal* m, size_t n)
-{
-    size_t row = m->cursor.row;
-    size_t col = m->cursor.col;
-    size_t len = m->config.n_cols;
-    if (col >= len) {
-        return;
-    }
-    //  0                  col                    len - 1
-    //  v                  v                      v
-    // [###########################################]
-    //                     |______________________|
-    //                                 V
-    //                          (len - 1) - (col) + 1 = len - col - 1 + 1 = len - col
-
-    n = MIN(n, len - col);
-    Cell* dst = m->lines.items[row].items + col;
-    Cell* src =  dst + n;
-    if (col + n < len) {
-        size_t dif = len - (col + n);
-        memmove(dst, src, dif);
-    }
-}
-
-void minal_linefeed(Minal* m)
-{
-    if (m->cursor.row + 1 > m->reg_bot) {
-        if (minal_cursor2absol(m) + 1 + m->row_offset >= m->lines.len) {
-            minal_new_line(m);
-        }
-        minal_pagedown(m, 1);
-    } else {
-        minal_cursor_move(m, m->cursor.col, m->cursor.row + 1);
-    }
-}
-
-void minal_carriageret(Minal* m)
-{
-    minal_cursor_move(m, 0, m->cursor.row);
-}
-
-void debug(char* escape)
-{
-    #ifdef DEBUG
-    static size_t dbg_escape_count = 0;
-    printf("[%03zu] %s", dbg_escape_count++, escape);
-    #endif
-    return;
-}
-
-
-void minal_receiver(Minal* m)
-{
-    size_t offset = 0;
-    char _buf[_32K];
-    while (true) {
-        assert(offset < _32K);
-        int n = minal_read_nonblock(m, _buf + offset, _32K - offset);
-        if (n == 0) break;
-        offset += n;
-    }
-
-    StringView view = (StringView) {
-        .data = _buf,
-        .len  = offset,
-    };
-
-#ifdef DEBUG
-    FILE* f = fopen("dump/dump.txt", "a");
-    char out[10];
-    for (size_t i = 0; i < view.len; ++i) {
-        uint8_t ch = *(view.data + i);
-        int n;
-        if (ch == '\n') {
-            n = sprintf(out, "\n");
-        } else if (isprint(ch)) {
-            n = sprintf(out, "%c ", ch);
-        } else {
-            n = sprintf(out, "%02X ", ch);
-        }
-        fwrite(out, 1, n, f);
-    }
-    fclose(f);
-#endif
-
-    char* prev;
-    while (view.len > 0) {
-        prev = (char*)view.data;
-        uint8_t ch = (uint8_t)sv_chop_left(&view);
-
-        size_t x   = m->cursor.col;
-        size_t y   = minal_cursor2absol(m);
-
-        if (ch == '\0') {
-            // debug("NULL\n");
-            continue;
-        }
-
-        if (ch == BELL) {
-            debug("BELL\n");
-            continue;
-        }
-
-        if (ch == LINEFEED) {
-            debug("\\n\n");
-            if (m->autonewline) minal_carriageret(m);
-            minal_linefeed(m);
-            continue;
-        }
-
-        if (ch == CARRIAGERET) {
-            debug("\\r\n");
-            minal_carriageret(m);
-            continue;
-        }
-
-        if (ch == DEL) {
-            debug("DEL\n");
-        }
-
-        if (ch == BACKSPACE) {
-            debug("BACKSPACE\n");
-
-            if (x == 0 && m->cursor.row == 0) continue;
-
-            if (!m->autowrap) {
-                // minal_cursor_move(m, x - 1, m->cursor.row);
-                size_t ncols = m->config.n_cols;
-                minal_cursor_move(m, MOD(x - 1, ncols), m->cursor.row);
-            } else {
-                if (x > 0)
-                    minal_cursor_move(m, x - 1, m->cursor.row);
-                else
-                    minal_cursor_move(m, m->config.n_cols - 1, m->cursor.row - 1);
-            }
-
-            continue;
-        }
-
-        if (ch == ESC) {
-        #ifdef DEBUG 
-            StringView before = view;
-        #endif
-
-            minal_parse_ansi(m, &view);
-
-        #ifdef DEBUG
-            debug("ESC ");
-            size_t n = before.len - view.len;
-            for (size_t i = 0; i < n; ++i) {
-                uint8_t ch = before.data[i];
-                if (isprint(ch)) {
-                    printf("%c ", ch);
-                } else {
-                    printf("%02X ", ch);
-                }
-            };
-            printf("\n");
-        #endif
-            continue;
-        }
-
-        uint32_t content;
-        int n = utf8_to_utf32((uint8_t*)view.data - 1, &content);
-        view.data += n - 1;
-        view.len  -= n - 1;
-
-        Cell cell = (Cell) {
-            .content = content,
-            .style = m->cursor.style,
-        };
-
-        minal_insert_at(m, x, y, cell);
-        if (m->cursor.col == m->config.n_cols) {
-            if (!m->autowrap) {
-                minal_cursor_move(m, 0, m->cursor.row);
-            } else {
-                minal_linefeed(m);
-                minal_carriageret(m);
-            }
-        } else {
-            minal_cursor_move(m, m->cursor.col + 1, m->cursor.row);
-        }
-    }
-}
-
-void minal_transmitter(Minal* m, SDL_Event* event)
-{
-    if (event->type == SDL_EVENT_QUIT) {
-        m->run = false;
-        return;
-    }
-
-    if (event->type == SDL_EVENT_KEY_DOWN) {
-        char code[10];
-        size_t n = SDLKeyboardEvent_to_ansicode(m, event->key, code);
-        if (n == 0) return;
-        #ifdef DEBUG_KEYS
-        if (isprint(*code)) printf("[TRANSMITTER] code = '%s'\n", code);
-        else                printf("[TRANSMITTER] code = '0x%02X'\n", *code);
-        #endif
-        minal_write_str(m, code);
-    }
-
-    if (event->type == SDL_EVENT_TEXT_INPUT) {
-        minal_write_str(m, event->text.text);
-    }
-}
-
-float blink_ratio(uint64_t secs, float freq) {
-    float angle = freq * secs;
-    float sine = sinf(angle);
-    return  0.5 + 0.5 * ((sine + 1.0f) / 2.0f);
-}
-
-void minal_render_text(Minal* m)
-{
-    float x = 0;
-    float y = 0;
-
-    StringView screen = sv_from_sb(m->screen);
-    size_t row_start;
-    if (m->cursor.row < m->reg_top) {
-        row_start = m->row_offset;
-        m->screen.len = 0;
-    } else {
-        if (m->lastframe_cursor.row < m->reg_top) {
-            size_t count = 0;
-            while (count < m->lastframe_cursor.row && screen.len > 0) {
-                sv_chop_line(&screen);
-                count++;
-            }
-            m->screen.len = screen.data - m->screen.data;
-
-            size_t s = m->lastframe_offset + m->lastframe_cursor.row;
-            size_t e = m->lastframe_offset + m->reg_top;
-            for (size_t row = s; row < e; row++) {
-                Line l = m->lines.items[row];
-                sb_nconcat(&m->screen, (char*)l.items, l.len);
-                sb_append(&m->screen, '\n');
-            };
-        } else {
-            size_t count = 0;
-            while (count < m->reg_top && screen.len > 0) {
-                sv_chop_line(&screen);
-                count++;
-            }
-            m->screen.len = screen.data - m->screen.data;
-        }
-        row_start = m->row_offset + m->reg_top;
-    }
-
-#ifdef DUMP_BUFFER
-    FILE* f = fopen("dump/buffer.txt", "a");
-#endif
-
-    for (size_t row = row_start; row <= m->row_offset + m->reg_bot; row++) {
-        Line l = m->lines.items[row];
-        uint8_t utf8buf[5];
-        for (size_t col = 0; col < l.len; ++col) {
-            int len = utf32_to_utf8(l.items[col].content, utf8buf);
-            sb_nconcat(&m->screen, (char*)utf8buf, len);
-#ifdef DUMP_BUFFER
-            char toprint[6];
-            int n;
-            for (int i = 0; i < len; ++i) {
-                uint8_t ch = utf8buf[i];
-                if (isprint(ch)) n = sprintf(toprint, "%c", ch);
-                else             n = sprintf(toprint, "0x%02X", ch);
-                fwrite(toprint, 1, n, f);
-            }
-#endif
-        }
-#ifdef DUMP_BUFFER
-        fwrite("\n", 1, 1, f);
-#endif
-        sb_append(&m->screen, '\n');
-
-    }
-
-#ifdef DUMP_BUFFER
-    fclose(f);
-#endif
-
-    uint8_t tick_secs = SDL_GetTicks() / 1000;
-    float blink = blink_ratio(tick_secs, 10.0);
-    float fastblink = blink_ratio(tick_secs, 20.0);
-
-    TTF_SetTextString(m->text, "", 0);
-    screen = sv_from_sb(m->screen);
-
-    size_t row = 0;
-    while (screen.len > 0 && row <= m->reg_bot) {
-        StringView l = sv_chop_line(&screen);
-        x = 0;
-        for (size_t col = 0; col < m->config.n_cols; ++col) {
-            Style style = m->lines.items[m->row_offset + row].items[col].style;
-
-            SDL_FRect bg = {
-                .x = x,
-                .y = y,
-                .w = m->config.cell_width,
-                .h = m->config.cell_height,
-            };
-            if (col != m->cursor.col && row != m->cursor.row) {
-                SDL_SetRenderDrawColor(m->rend, style.bg_color.r, style.bg_color.g, style.bg_color.b, style.bg_color.a);
-                SDL_RenderFillRect(m->rend, &bg);
-            }
-                
-
-            if (l.len == 0) {
-                x += m->config.cell_width;
-                continue;
-            }
-
-            uint8_t byte = sv_first(&l);    
-            size_t len = utf8_len(byte);
-            TTF_SetTextString(m->text, (char*)l.data, len);
-            l.data += len;
-            l.len  -= len;
-
-            SDL_Color fg;
-            if (col == m->cursor.col && row == m->cursor.row) fg = style.bg_color;
-            else                                              fg = style.fg_color;
-
-            if (style.faint) fg.a /= 2;
-
-            if      (style.hidden)    fg.a = 0;
-            else if (style.blink)     fg.a *= blink;
-            else if (style.fastblink) fg.a *= fastblink;
-
-            int stylemask = 0;
-            if (style.italic)    stylemask |= TTF_STYLE_ITALIC;
-            if (style.bold)      stylemask |= TTF_STYLE_BOLD;
-            if (style.underline) stylemask |= TTF_STYLE_UNDERLINE;
-            if (style.crossout)  stylemask |= TTF_STYLE_STRIKETHROUGH;
-            TTF_SetFontStyle(m->config.font, stylemask);
-
-            TTF_SetTextColor(m->text, fg.r, fg.g, fg.b, fg.a);
-            TTF_DrawRendererText(m->text, x, y);
-            x += m->config.cell_width;
-        }
-        TTF_SetTextString(m->text, "\n", 1);
-        TTF_DrawRendererText(m->text, x, y);
-        row++;
-        y += m->config.cell_height;
-        m->lastframe_cursor = m->cursor;
-        m->lastframe_offset = m->row_offset;
-    }
-}
-
-void minal_render_cursor(Minal* m)
-{
-    SDL_SetRenderDrawColor(m->rend, m->cursor.style.fg_color.r, m->cursor.style.fg_color.g, m->cursor.style.fg_color.b, m->cursor.style.fg_color.a);
-    SDL_FRect cur = minal_cursor_to_rect(m);
-    SDL_RenderFillRect(m->rend, &cur);
-}
-
-void minal_run(Minal* m)
-{
-    while (m->run) {
-        int start = SDL_GetTicks();
-
-        SDL_Event event;
-        while (SDL_PollEvent(&event)) {
-            minal_transmitter(m, &event);
-        }
-
-        SDL_SetRenderDrawColor(m->rend, DEFAULT_STYLE.bg_color.r, DEFAULT_STYLE.bg_color.g, DEFAULT_STYLE.bg_color.b, DEFAULT_STYLE.bg_color.a);
-        SDL_RenderClear(m->rend);
-        if (true) {
-            minal_receiver(m);
-            minal_render_cursor(m);
-            minal_render_text(m);
-        } else if (false) {
-            SDL_Surface* surf = TTF_RenderGlyph_Solid(m->config.font, 0x00002717, BASE_COLORS[WHITE]);                                                              // Render a single 32-bit glyph at fast quality to a new 8-bit surface.
-            // SDL_Surface* surf = TTF_RenderGlyph_Solid(m->config.font, 0x00007533, BASE_COLORS[WHITE]);                                                              // Render a single 32-bit glyph at fast quality to a new 8-bit surface.
-            if (surf == NULL) {
-                printf("Failed to render glyph: %s\n", SDL_GetError());
-                exit(1);
-            }
-            SDL_Texture* tex = SDL_CreateTextureFromSurface(m->rend, surf);
-            if (tex == NULL) {
-                printf("ERROR: could not create texture: %s\n", SDL_GetError());
-                exit(2);
-            }
-            bool suc = SDL_RenderTexture(m->rend, tex, NULL, NULL);
-            if (!suc) {
-                printf("ERROR: failed to render texture: %s\n", SDL_GetError());
-                exit(3);
-            }
-            SDL_DestroyTexture(tex);
-        } else if (true) {
-            TTF_SetTextString(m->text, "\xE2\x9C\x97", 3);
-            TTF_DrawRendererText(m->text, 10, 10);
-        }
-        SDL_RenderPresent(m->rend);
-        minal_check_shell(m);
-
-        int elapsed = SDL_GetTicks() - start;
-        int max_delay = 1000 / FPS;
-        if (elapsed < max_delay) SDL_Delay(max_delay - elapsed);
-    }
-}
-
-void minal_finish(Minal *m)
-{
-    for (size_t i = 0; i < m->lines.len; ++i) {
-        vec_free(&m->lines.items[i]);
-    }
-    vec_free(&m->lines);
-
-    sb_free(&m->screen);
-
-    assert(SDL_StopTextInput(m->window));
-    TTF_CloseFont(m->config.font);
-
-    TTF_DestroyRendererTextEngine(m->text_engine);
-    TTF_DestroyText(m->text);
-
-    SDL_DestroyRenderer(m->rend);
-    SDL_DestroyWindow(m->window);
-
-    TTF_Quit();
-    SDL_Quit();
-
-    minal_kill_shell(m);
-
-    close(m->master_fd);
-    close(m->slave_fd);
-}
-
-void find_full_feature_fonts(Minal m)
-{
-    // NOTE: all the memory leaks back home
-    // uint32_t ch = 0x0000279C; // ➜
-    uint32_t ch = 0x00002717;    // ✗
-    m.config.font = TTF_OpenFont(FONT_FILE, m.config.font_size);
-    StringBuilder fonts = sb_from_file("fonts.txt");
-    StringView buf = sv_from_sb(fonts);
-    while (buf.len > 0) {
-        StringView filepath = sv_chop_line(&buf);
-        m.config.font = TTF_OpenFont(sv_to_cstr(filepath), m.config.font_size);
-        if (TTF_FontHasGlyph(m.config.font, ch)) {
-            printf("%.*s\n", (int)filepath.len, filepath.data);
-        }
-    }
-    return;
-}
-
-int main(void)
-{
-    Minal m = minal_init();
-    minal_run(&m);
-    minal_finish(&m);
-    return 0;
-}
-
-size_t SDLKeyboardEvent_to_ansicode(Minal* m, SDL_KeyboardEvent ev, char out[10])
+size_t minal_keyboard_to_ansi(Minal* m, SDL_KeyboardEvent ev, char out[10])
 {
     SDL_Keycode k = ev.key;
     size_t n = 0;
@@ -1989,3 +1542,505 @@ size_t SDLKeyboardEvent_to_ansicode(Minal* m, SDL_KeyboardEvent ev, char out[10]
     return n;
 }
 
+/*******************************************************************************
+ *                                                                             *
+ *                         CURSOR                                              *
+ *                                                                             *
+ ******************************************************************************/
+
+void minal_cursor_move(Minal* m, int new_col, int new_row)
+{
+    assert(0 <= new_row && new_row < m->config.n_rows);
+    assert(0 <= new_col && new_col <= m->config.n_cols);
+    m->cursor.col = new_col;
+    m->cursor.row = new_row;
+}
+
+size_t minal_cursor2absol(Minal* m)
+{
+    assert(m->cursor.row + m->row_offset < m->lines.len);
+    WhichRegion which = minal_cursor_in_region(m);
+    switch (which) {
+        case REGION_ABOVE:  return m->above_reg.start + m->cursor.row;
+        case REGION_BELOW: return m->below_reg.start + (m->cursor.row - m->scroll_reg.end);
+        case REGION_SCROLL: return m->row_offset + m->cursor.row;
+        default: printf("Invalid Region '%d'\n", which); return REGION_SCROLL;
+    }
+}
+
+WhichRegion minal_cursor_in_region(Minal* m)
+{
+    if (m->cursor.row < m->scroll_reg.start)
+        return REGION_ABOVE;
+    else if (m->cursor.row >=  m->scroll_reg.end)
+        return REGION_BELOW;
+    else 
+        return REGION_SCROLL;
+}
+
+
+SDL_FRect minal_cursor_to_rect(Minal* m)
+{
+    return (SDL_FRect) {
+        .x = m->cursor.col * m->config.cell_width,
+        .y = m->cursor.row * m->config.cell_height,
+        .w = m->config.cell_width,
+        .h = m->config.cell_height,
+    };
+}
+
+
+/*******************************************************************************
+ *                                                                             *
+ *                              RECEIVER                                       *
+ *                     (read from subprocess's stdout)                         *
+ *                                                                             *
+ ******************************************************************************/
+void minal_receiver(Minal* m)
+{
+    size_t offset = 0;
+    char _buf[_32K];
+    while (true) {
+        assert(offset < _32K);
+        int n = minal_read_nonblock(m, _buf + offset, _32K - offset);
+        // TODO: check ioctl(fd, FIONREAD, ...) 
+        // to know if there's remaining bytes
+        if (n == 0) break;
+        offset += n;
+        if (offset == _32K) break;
+    }
+
+    StringView view = (StringView) {
+        .data = _buf,
+        .len  = offset,
+    };
+
+    debug_dump(view);
+
+    char* prev;
+    while (view.len > 0) {
+        prev = (char*)view.data;
+        uint8_t ch = (uint8_t)sv_chop_left(&view);
+
+        size_t x   = m->cursor.col;
+        size_t y   = minal_cursor2absol(m);
+
+        if (ch == '\0') {
+            // debug_escape("NULL\n");
+            continue;
+        }
+
+        if (ch == BELL) {
+            debug_escape("BELL\n");
+            continue;
+        }
+
+        if (ch == LINEFEED) {
+            debug_escape("\\n\n");
+            if (m->autonewline) minal_carriageret(m);
+            minal_linefeed(m);
+            continue;
+        }
+
+        if (ch == CARRIAGERET) {
+            debug_escape("\\r\n");
+            minal_carriageret(m);
+            continue;
+        }
+
+        if (ch == DEL) {
+            debug_escape("DEL\n");
+        }
+
+        if (ch == BACKSPACE) {
+            debug_escape("BACKSPACE\n");
+
+            if (x == 0 && m->cursor.row == 0) continue;
+
+            if (!m->autowrap) {
+                size_t ncols = m->config.n_cols;
+                minal_cursor_move(m, MOD(x - 1, ncols), m->cursor.row);
+            } else {
+                if (x > 0)
+                    minal_cursor_move(m, x - 1, m->cursor.row);
+                else
+                    minal_cursor_move(m, m->config.n_cols - 1, m->cursor.row - 1);
+            }
+
+            continue;
+        }
+
+        if (ch == ESC) {
+            debug_sequence_start(view);
+            minal_parse_ansi(m, &view);
+            debug_sequence_end(view);
+            continue;
+        }
+
+        uint32_t content;
+        int n = utf8_to_utf32((uint8_t*)view.data - 1, &content);
+        view.data += n - 1;
+        view.len  -= n - 1;
+
+        Cell cell = (Cell) {
+            .content = content,
+            .style = m->cursor.style,
+        };
+
+        minal_insert_at(m, x, y, cell);
+        if (m->cursor.col == m->config.n_cols) {
+            if (!m->autowrap) {
+                minal_cursor_move(m, 0, m->cursor.row);
+            } else {
+                minal_linefeed(m);
+                minal_carriageret(m);
+            }
+        } else {
+            minal_cursor_move(m, m->cursor.col + 1, m->cursor.row);
+        }
+    }
+}
+
+int minal_read_nonblock(Minal* m, char* buf, size_t n)
+{
+    int oldf = fcntl(m->master_fd, F_GETFL, 0);
+    assert(oldf != -1);
+    int ret = fcntl(m->master_fd, F_SETFL, oldf | O_NONBLOCK);
+    assert(ret != -1);
+    int res = read(m->master_fd, buf, n);
+    if (res == -1) {
+        if (errno != EAGAIN && errno != EWOULDBLOCK) {
+            printf("ERROR: read nonblock: %s\n", strerror(errno));
+            exit(1);
+        }
+        return 0;
+    }
+    return res;
+}
+
+
+/*******************************************************************************
+ *                                                                             *
+ *                              TRANSMITTER                                    *
+ *                     (write to subprocess's stdin)                           *
+ *                                                                             *
+ ******************************************************************************/
+void minal_transmitter(Minal* m, SDL_Event* event)
+{
+    if (event->type == SDL_EVENT_QUIT) {
+        m->run = false;
+        return;
+    }
+
+    if (event->type == SDL_EVENT_KEY_DOWN) {
+        char code[10];
+        size_t n = minal_keyboard_to_ansi(m, event->key, code);
+        if (n == 0) return;
+        #if DEBUG & (DEBUG_TRANSMITTER | DEBUG_ALL)
+        if (isprint(*code)) printf("[TRANSMITTER] code = '%s'\n", code);
+        else                printf("[TRANSMITTER] code = '0x%02X'\n", *code);
+        #endif
+        minal_write_str(m, code);
+    }
+
+    if (event->type == SDL_EVENT_TEXT_INPUT) {
+        minal_write_str(m, event->text.text);
+    }
+}
+
+void minal_write_str(Minal* m, const char* s)
+{
+    size_t n = strlen(s);
+    write(m->master_fd, s, n);
+}
+
+void minal_write_char(Minal* m, int c)
+{
+    write(m->master_fd, &c, 1);
+}
+
+Cell minal_at(Minal *m, size_t col, size_t row)
+{
+    assert(row >= 0 && row < m->lines.len);
+    assert(col >= 0 && col < m->lines.items[row].len);
+    return m->lines.items[row].items[col];
+}
+
+
+/*******************************************************************************
+ *                                                                             *
+ *                           LINES BUFFER                                      *
+ *                (read/write to internal buffer of lines )                    *
+ *                                                                             *
+ ******************************************************************************/
+void minal_insert_at(Minal* m, size_t col, size_t row, Cell c)
+{
+    assert(row >= 0 && row < m->lines.len);
+    Line* l = &m->lines.items[row];
+    if (col >= m->config.n_cols) return;
+
+    Cell emptycell = {
+        .content = ' ',
+        .style   = m->cursor.style,
+    };
+    if (col >= l->len) {
+        int n = col - l->len;
+        for (int i = 0; i < n; ++i) minal_append(m, row, emptycell);
+        minal_append(m, row, c);
+        return;
+    }
+    l->items[col] = c;
+}
+
+void minal_append(Minal* m, size_t row, Cell c)
+{
+    assert(row >= 0 && row < m->lines.len);
+    Line r = m->lines.items[row];
+    if (m->lines.items[row].len + 1 >= m->config.n_cols) {
+        return;
+    }
+    vec_append(&m->lines.items[row], c);
+}
+
+void minal_new_line(Minal* m)
+{
+    Line new_line = minal_line_alloc(m);
+    size_t idx = m->below_reg.start;
+    vec_insert(&m->lines, new_line, idx);
+    m->below_reg.start++;
+    m->below_reg.end++;
+}
+
+Line minal_line_alloc(Minal* m)
+{
+    Line l = {0};
+    vec_expandto(&l, m->config.n_cols);
+    for (size_t i = 0; i < m->config.n_cols; ++i) 
+        vec_append(&l, minal_default_cell(m));
+    return l;
+}
+
+Cell minal_default_cell(Minal *m)
+{
+    Cell c = {
+        .style = m->cursor.style,
+        .content = ' ',
+    };
+    return c;
+}
+
+
+/*******************************************************************************
+ *                                                                             *
+ *                           RENDER                                            *
+ *                                                                             *
+ ******************************************************************************/
+void minal_render_cursor(Minal* m)
+{
+    SDL_SetRenderDrawColor(m->rend, m->cursor.style.fg_color.r, m->cursor.style.fg_color.g, m->cursor.style.fg_color.b, m->cursor.style.fg_color.a);
+    SDL_FRect cur = minal_cursor_to_rect(m);
+    SDL_RenderFillRect(m->rend, &cur);
+}
+
+void minal_render_text(Minal* m)
+{
+    uint8_t tick_secs = SDL_GetTicks() / 1000;
+    TTF_SetTextString(m->text, "", 0);
+
+    minal_render_region(m, m->above_reg,  tick_secs);
+    minal_render_region(m, m->scroll_reg, tick_secs);
+    minal_render_region(m, m->below_reg, tick_secs);
+
+    m->lastframe_cursor = m->cursor;
+    m->lastframe_offset = m->row_offset;
+}
+
+void minal_render_region(Minal* m, Region region, uint8_t ticks)
+{
+    float blink = blink_ratio(ticks, 10.0);
+    float fastblink = blink_ratio(ticks, 20.0);
+    float x = 0;
+    float y0;
+    if (region.absolute) {
+        if (region.start < m->scroll_reg.start) {
+            y0 = 0;
+        }
+        if (region.start > m->scroll_reg.start) {
+            y0 = (m->scroll_reg.end * m->config.cell_height);
+        }
+    } else {
+        y0 = region.start * m->config.cell_height;
+    }
+
+
+    size_t start;
+    size_t end;
+    if (region.absolute) {
+        start = region.start;
+        end = region.end;
+    } else {
+        start = m->row_offset + region.start;
+        end   = m->row_offset + region.end;
+    }
+
+    float y = y0;
+    for (size_t row = start; row < end; ++row) {
+        Line line = m->lines.items[row];
+        x = 0;
+        for (size_t col = 0; col < m->config.n_cols; ++col) {
+            Cell cell = line.items[col];
+            Style style = cell.style;
+
+            SDL_FRect bg = {
+                .x = x,
+                .y = y,
+                .w = m->config.cell_width,
+                .h = m->config.cell_height,
+            };
+            if (col != m->cursor.col || row != m->cursor.row) {
+                SDL_SetRenderDrawColor(m->rend, style.bg_color.r, style.bg_color.g, style.bg_color.b, style.bg_color.a);
+                SDL_RenderFillRect(m->rend, &bg);
+            }
+                
+            if (line.len == 0) {
+                x += m->config.cell_width;
+                continue;
+            }
+
+            uint8_t ch[5];
+            int len = utf32_to_utf8(cell.content, ch);
+            TTF_SetTextString(m->text, (char*)ch, len);
+
+            SDL_Color fg;
+            if (col == m->cursor.col && row == m->cursor.row) fg = style.bg_color;
+            else                                              fg = style.fg_color;
+
+            if (style.faint) fg.a /= 2;
+
+            if      (style.hidden)    fg.a = 0;
+            else if (style.blink)     fg.a *= blink;
+            else if (style.fastblink) fg.a *= fastblink;
+
+            int stylemask = 0;
+            if (style.italic)    stylemask |= TTF_STYLE_ITALIC;
+            if (style.bold)      stylemask |= TTF_STYLE_BOLD;
+            if (style.underline) stylemask |= TTF_STYLE_UNDERLINE;
+            if (style.crossout)  stylemask |= TTF_STYLE_STRIKETHROUGH;
+            TTF_SetFontStyle(m->config.font, stylemask);
+
+            TTF_SetTextColor(m->text, fg.r, fg.g, fg.b, fg.a);
+            TTF_DrawRendererText(m->text, x, y);
+            x += m->config.cell_width;
+        }
+        TTF_SetTextString(m->text, "\n", 1);
+        TTF_DrawRendererText(m->text, x, y);
+        y += m->config.cell_height;
+    }
+
+    debug_region(m, y0, y);
+}
+
+float blink_ratio(uint64_t secs, float freq) 
+{
+    float angle = freq * secs;
+    float sine = sinf(angle);
+    return  0.5 + 0.5 * ((sine + 1.0f) / 2.0f);
+}
+
+
+/*******************************************************************************
+ *                                                                             *
+ *                           DEBUG                                             *
+ *                                                                             *
+ ******************************************************************************/
+static inline void debug_escape(char* escape)
+{
+    #if DEBUG & (DEBUG_ESCAPES | DEBUG_ALL)
+    static size_t dbg_escape_count = 0;
+    printf("[%03zu] %s", dbg_escape_count++, escape);
+    #endif
+    return;
+}
+
+#if DEBUG & (DEBUG_ESCAPES | DEBUG_ALL)
+static StringView before;
+#endif
+
+static inline void debug_sequence_start(StringView start)
+{
+    #if DEBUG & (DEBUG_ESCAPES | DEBUG_ALL)
+    before = start;
+    #endif
+}
+
+static inline void debug_sequence_end(StringView end)
+{
+    #if DEBUG & (DEBUG_ESCAPES | DEBUG_ALL)
+    debug_escape("ESC ");
+    size_t n = before.len - end.len;
+    for (size_t i = 0; i < n; ++i) {
+        uint8_t ch = before.data[i];
+        if (isprint(ch)) {
+            printf("%c ", ch);
+        } else {
+            printf("%02X ", ch);
+        }
+    };
+    printf("\n");
+    #endif
+}
+                                
+static inline void debug_dump(StringView buf)
+{
+#if DEBUG & (DEBUG_DUMP | DEBUG_ALL)
+    FILE* f = fopen("dump/dump.txt", "a");
+    char out[10];
+    for (size_t i = 0; i < buf.len; ++i) {
+        uint8_t ch = *(buf.data + i);
+        int n;
+        if (ch == '\n') {
+            n = sprintf(out, "\n");
+        } else if (isprint(ch)) {
+            n = sprintf(out, "%c ", ch);
+        } else {
+            n = sprintf(out, "%02X ", ch);
+        }
+        fwrite(out, 1, n, f);
+    }
+    fclose(f);
+#endif
+}
+
+static inline void debug_region(Minal* m, float y0, float y)
+{
+#if DEBUG & (DEBUG_REGION | DEBUG_ALL)
+    SDL_Color c = (SDL_Color) { .r = 20, .g = 20, .b = 200, .a = 200 };
+    SDL_SetRenderDrawColor(m->rend, c.r, c.g, c.b, c.a);
+    SDL_FRect s = (SDL_FRect) {
+        .x = 0,
+        .y = y0,
+        .w = m->config.window_width, 
+        .h = y - y0,
+    };
+    SDL_RenderRect(m->rend, &s);
+#endif
+}
+
+void fonts_with_glyph(Minal m, uint32_t glyph)
+{
+    // NOTE: all the memory leaks back home
+    // some useful glyphs (used in my zsh prompt):
+    //  ➜  0x0000279C 
+    //  ✗  0x00002717 
+    m.config.font = TTF_OpenFont(FONT_FILE, m.config.font_size);
+    StringBuilder fonts = sb_from_file("fonts.txt");
+    StringView buf = sv_from_sb(fonts);
+    while (buf.len > 0) {
+        StringView filepath = sv_chop_line(&buf);
+        m.config.font = TTF_OpenFont(sv_to_cstr(filepath), m.config.font_size);
+        if (TTF_FontHasGlyph(m.config.font, glyph)) {
+            printf("%.*s\n", (int)filepath.len, filepath.data);
+        }
+    }
+    return;
+}

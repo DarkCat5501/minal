@@ -27,8 +27,6 @@
 #include <SDL3/SDL_timer.h>
 #include <SDL3_ttf/SDL_ttf.h>
 
-// #define DEBUG true
-// #define DUMP_BUFFER true
 
 #define _32K 32678
 #define CARR_SB_INIT_CAP _32K
@@ -39,63 +37,29 @@
 #include "carrlib/unicode.h"
 #include "ansi.h"
 
-// #define FONT_FILE           "resources/font.ttf"
+#define DEBUG_ALL          (1 << 0)
+#define DEBUG_REGION       (1 << 1)
+#define DEBUG_DUMP         (1 << 2)
+#define DEBUG_TRANSMITTER  (1 << 3)
+#define DEBUG_ESCAPES      (1 << 4)
+#define DEBUG (DEBUG_REGION | DEBUG_ESCAPES)
+// #define DEBUG (DEBUG_ESCAPES)
+
 #define FONT_FILE              "resources/font.ttf"
 #define FALLBACK_1             "/usr/share/fonts/TTF/Hack-Bold.ttf"
 #define FALLBACK_2             "/usr/share/fonts/TTF/DejaVuSansMono.ttf"
 #define FALLBACK_3             "/usr/share/fonts/gnu-free/FreeSerif.otf"
 
-// #define FONT_FILE           "/usr/share/fonts/TTF/DejaVuSansMono.ttf"
-// #define FONT_FILE           "resources/SourceCodePro/SauceCodeProNerdFont-Regular.ttf"
-// #define FONT_FILE           "resources/CodeNewRoman/CodeNewRomanNerdFontMono-Regular.otf"
-// #define FONT_FILE           "resources/Monoid/MonoidNerdFont-Regular.ttf"
-// #define FONT_FILE           "resources/SpaceMono/SpaceMonoNerdFont-Regular.ttf"
-// #define FONT_FILE           "resources/gnu-free/FreeMono.otf"
-// #define FONT_FILE           "resources/Adwaita/AdwaitaMono-Regular.ttf"
-// #define FONT_FILE           "resources/NotoSansMono/NotoSansMono-Regular.ttf"
-// #define FONT_FILE           "resources/CascadiaCode/CaskaydiaCoveNerdFontMono-Regular.ttf"
-// #define FONT_FILE           "resources/0xProto/0xProtoNerdFont-Regular.ttf"
-// #define FONT_FILE           "resources/0xProto/0xProtoNerdFontPropo-Regular.ttf"
-// #define FONT_FILE           "resources/CODE2000.ttf"
-// #define FONT_FILE           "resources/FiraMono/FiraMonoNerdFont-Regular.otf"
-// #define FONT_FILE           "resources/FiraCode/FiraCodeNerdFontPropo-Regular.ttf"
-// #define FONT_FILE           "resources/FiraCode/FiraCodeNerdFont-Regular.ttf"
-// #define FONT_FILE           "resources/NotoSansSymbols2/NotoSansSymbols2-Regular.ttf"
-// #define FONT_FILE           "resources/Unifont/unifont-17.0.04.otf"
-// contains // ➜  
-// #define FONT_FILE           "/usr/share/fonts/TTF/DejaVuSansCondensed.ttf"
-// #define FONT_FILE           "/usr/share/fonts/TTF/DejaVuSans-BoldOblique.ttf"
-// #define FONT_FILE           "/usr/share/fonts/gnu-free/FreeSerif.otf"
-// #define FONT_FILE           "/usr/share/fonts/TTF/DejaVuSansMono.ttf"
-// contains  // ✗
-// #define FONT_FILE           "/usr/share/fonts/Adwaita/AdwaitaMono-Italic.ttf"
-// #define FONT_FILE           "/usr/share/fonts/Adwaita/AdwaitaSans-Regular.ttf"
-// #define FONT_FILE           "/usr/share/fonts/Adwaita/AdwaitaSans-Regular.ttf"
-// #define FONT_FILE           "/usr/share/fonts/Adwaita/AdwaitaSans-Italic.ttf"
-// #define FONT_FILE           "/usr/share/fonts/TTF/DejaVuSansCondensed.ttf"
-// #define FONT_FILE           "/usr/share/fonts/TTF/DejaVuSans-BoldOblique.ttf"
-// #define FONT_FILE           "/usr/share/fonts/Adwaita/AdwaitaSans-Italic.ttf"
-// #define FONT_FILE           "/usr/share/fonts/Adwaita/AdwaitaSans-Italic.ttf"
-// #define FONT_FILE           "/usr/share/fonts/gnu-free/FreeSerif.otf"
-// #define FONT_FILE           "/usr/share/fonts/Adwaita/AdwaitaSans-Regular.ttf"
-// #define FONT_FILE           "/usr/share/fonts/Adwaita/AdwaitaSans-Italic.ttf"
-// #define FONT_FILE           "/usr/share/fonts/TTF/DejaVuSansMono.ttf"
-// #define FONT_FILE           "/usr/share/fonts/Adwaita/AdwaitaMono-Italic.ttf"
-// #define FONT_FILE           "/usr/share/fonts/Adwaita/AdwaitaSans-Italic.ttf"
-// #define FONT_FILE           "/usr/share/fonts/TTF/DejaVuSansCondensed.ttf"
-#define FONT_FILE_2         "/usr/share/fonts/TTF/Hack-Bold.ttf"
-#define FONT_FILE_3         "resources/FiraMono/FiraMonoNerdFont-Regular.otf"
-#define FONT_FILE_4         "/usr/share/fonts/TTF/DejaVuSansMono.ttf"
-#define FONT_FILE_5         "/usr/share/fonts/gnu-free/FreeSerif.otf"
-#define FONT_FILE_6         "/usr/share/fonts/Adwaita/AdwaitaSans-Regular.ttf"
 
 #define DEFAULT_FONT_SIZE   18.0f
 #define DEFAULT_DISPLAY_DPI 96
-// #define DEFAULT_N_COLS      90
-#define DEFAULT_N_COLS      120
+#define DEFAULT_N_COLS      90
+// #define DEFAULT_N_COLS      120
 #define DEFAULT_N_ROWS      30
 
 #define FPS    144
+
+#define MOD(a, b) ((((a) % (b)) + (b)) % (b))
 
 extern char **environ;
 
@@ -110,7 +74,6 @@ typedef struct {
     int       window_width;
     int       window_height;
 } Config;
-
 
 typedef struct {
     bool      bold:        1;
@@ -151,17 +114,31 @@ typedef struct {
     size_t cap;
 } Lines;
 
+typedef enum {
+    REGION_SCROLL,
+    REGION_ABOVE,
+    REGION_BELOW,
+} WhichRegion;
+
+typedef struct {
+    size_t start;
+    size_t end;
+    bool   absolute;
+} Region ;
+
 typedef struct {
     Lines           lines;
-    StringBuilder   screen;
+    // StringBuilder   screen;
     Cursor          cursor;
     Cursor          saved_cursor;
     Config          config;
     bool            run;
 
     size_t          row_offset;
-    size_t          reg_top;
-    size_t          reg_bot;
+
+    Region          scroll_reg;
+    Region          above_reg;
+    Region          below_reg;
 
     Cursor          lastframe_cursor;
     size_t          lastframe_offset;
@@ -184,69 +161,78 @@ typedef struct {
     bool            cursor_application;
 } Minal;
 
-// basic stuff
+// APPLICATION STARTUP/SHUTDOWN
 Minal       minal_init();
 void        minal_spawn_shell(Minal* m);
 void        minal_check_shell(Minal *m);
 void        minal_finish(Minal *m);
 void        minal_run(Minal* m);
 
-//ansi escape sequences commands
+// ANSI ESCAPE SEQUENCES
+bool        isparameter(uint8_t byte);
+bool        isintermediate(uint8_t byte);
+bool        isfinal(uint8_t byte);
 void        minal_parse_ansi(Minal* m, StringView* bytes);
+void        minal_parse_ansi_args(Minal* m, StringView* bytes, int* argc, int argv[]);
+void        minal_parse_ansi_osc(Minal* m, StringView* bytes);
+void        minal_parse_ansi_csi(Minal* m, StringView* bytes);
 void        minal_erase_in_line(Minal* m, size_t opt);
 void        minal_erase_in_display(Minal* m, size_t opt);
 void        minal_delete_chars(Minal* m, size_t n);
-void        minal_pageup(Minal* m, size_t opt);
-void        minal_pagedown(Minal* m, size_t opt);
 void        minal_linefeed(Minal* m);
 void        minal_carriageret(Minal* m);
+void        minal_pageup(Minal* m, size_t opt);
+void        minal_pagedown(Minal* m, size_t opt);
 void        minal_graphic_mode(Minal* m, int* argv, int argc);
-SDL_Color   minal_select_color(Minal* m, int op);
-SDL_Color   minal_select_color_by_index(Minal* m, int idx);
 SDL_Color   minal_select_color_extended(Minal* m, int r, int g, int b);
+SDL_Color   minal_select_color_index(Minal* m, int idx);
+SDL_Color   minal_select_color_base(Minal* m, int op);
+void        minal_apply_style(Minal* m, int op);
+size_t      minal_keyboard_to_ansi(Minal* m, SDL_KeyboardEvent ev, char out[10]);
 
-// cursor 
-SDL_FRect   minal_cursor_to_rect(Minal* m);
+// CURSOR
 void        minal_cursor_move(Minal* m, int new_col, int new_row);
 size_t      minal_cursor2absol(Minal* m);
+WhichRegion minal_cursor_in_region(Minal* m);
+SDL_FRect   minal_cursor_to_rect(Minal* m);
 
-// write to subprocess's stdin
+// RECEIVER (read from subprocess's stdout)
+void        minal_receiver(Minal* m);
+int         minal_read_nonblock(Minal* m, char* buf, size_t n);
+
+// TRANSMITTER (write to subprocess's stdin)
+void        minal_transmitter(Minal* m, SDL_Event* event);
 void        minal_write_str(Minal* m, const char* s);
 void        minal_write_char(Minal* m, int c);
-void        minal_transmitter(Minal* m, SDL_Event* event);
 
-// read from subprocess's stdout and render it
-int         minal_read_nonblock(Minal* m, char* buf, size_t n);
-void        minal_receiver(Minal* m);
-void        minal_render_text(Minal* m);
-
-// read/write
+// LINES BUFFER (read/write to internal buffer of lines)
 Cell        minal_at(Minal *m, size_t col, size_t row);
 void        minal_insert_at(Minal* m, size_t col, size_t row, Cell c);
 void        minal_append(Minal* m, size_t row, Cell c);
-Cell        default_cell(Minal *m);
-
-// line
 void        minal_new_line(Minal *m);
 Line        minal_line_alloc(Minal* m);
-void        line_print(Line* l);
+Cell        minal_default_cell(Minal *m);
 
-// screen
-size_t      screen_col2idx(StringView* l, size_t col);
-size_t      screen_getline(StringView l, size_t index);
+// RENDER
+void        minal_render_cursor(Minal* m);
+void        minal_render_text(Minal* m);
+void        minal_render_region(Minal* m, Region region, uint8_t ticks);
+float       blink_ratio(uint64_t secs, float freq);
 
-// helpers
-size_t      SDLKeyboardEvent_to_ansicode(Minal* m, SDL_KeyboardEvent ev, char out[10]);
-bool        is_utf8_head(uint8_t ch);
-size_t      utf8_chrlen(char ch);
 
+// DEBUG
+static inline void debug_escape(char* escape);
+static inline void debug_sequence_start(StringView start);
+static inline void debug_sequence_end(StringView end);
+static inline void debug_dump(StringView buf);
+static inline void debug_region(Minal* m, float y0, float y);
+void fonts_with_glyph(Minal m, uint32_t glyph);
 
 // colors and styles
 // TODO: not use constants for all these stuff
 //       as to allow users to change these values dynamically
 #define DEFAULT_FG_COLOR FOREGROUND_COLOR
 #define DEFAULT_BG_COLOR BACKGROUND_COLOR
-
 
 enum {
     BLACK,
