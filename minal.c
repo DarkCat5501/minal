@@ -333,9 +333,18 @@ bool isfinal(uint8_t byte)
 
 void minal_parse_ansi(Minal* m, StringView* bytes)
 {
+    if(bytes->len==0) {
+        printf("Incomplete ANSI sequence");
+        return;
+    }
+
     uint8_t b = sv_chop_left(bytes);
     switch (b) {
         case DESIGNATE_G0_CHARSET: {
+            if(bytes->len==0) {
+                printf("Incomplete G0 Charset");
+                return;
+            }
             b = sv_chop_left(bytes);
             switch (b) {
                 case G0CHSET_UK:
@@ -364,6 +373,10 @@ void minal_parse_ansi(Minal* m, StringView* bytes)
                 case G0CHSET_JIS_ROMAN:
                     printf("IGNORE DESIGNATE GO CHARSET + %c\n", b); break;
                 case G0CHSET_PREFIX_1:
+                    if(bytes->len==0) {
+                        printf("Incomplete G0 Charset selector");
+                        return;
+                    }
                     b = sv_chop_left(bytes);
                     switch (b) {
                         case G0CHSET_GREEK:
@@ -372,6 +385,10 @@ void minal_parse_ansi(Minal* m, StringView* bytes)
                             printf("IGNORE DESIGNATE GO CHARSET + PREFIX_1 + %c\n", b); break;
                     };
                 case G0CHSET_PREFIX_2: {
+                    if(bytes->len==0) {
+                        printf("Incomplete G0 Charset prefix 2");
+                        return;
+                    }
                     b = sv_chop_left(bytes);
                     switch (b) {
                         case G0CHSET_PORTUGUESE:
@@ -384,6 +401,10 @@ void minal_parse_ansi(Minal* m, StringView* bytes)
                 }
                 
                 case G0CHSET_PREFIX_3:
+                    if(bytes->len==0) {
+                        printf("Incomplete G0 Charset prefix 3");
+                        return;
+                    }
                     b = sv_chop_left(bytes);
                     switch (b) {
                         case G0CHSET_DEC_CYRILLIC:
@@ -395,13 +416,15 @@ void minal_parse_ansi(Minal* m, StringView* bytes)
         }
 
         case DEC_SAVE_CURSOR: {
-            sv_chop_left(bytes);
+            // NOTE: faz sentido fazer um chop aqui?
+            // sv_chop_left(bytes);
             m->saved_cursor = m->cursor;
             return;
         }
 
         case DEC_RESTORE_CURSOR: {
-            sv_chop_left(bytes);
+            // NOTE: faz sentido fazer um chop aqui?
+            // sv_chop_left(bytes);
             m->cursor = m->saved_cursor;
             return;
         }
@@ -434,9 +457,10 @@ void minal_parse_ansi(Minal* m, StringView* bytes)
         }
 
         case DEVICE_CONTROL_STRING: {
+            
             printf("TODO: DEVICE_CONTROL_STRING\n");
-            while(sv_chop_left(bytes) != ESC && sv_first(bytes) != STRING_TERMINATOR);
-            sv_chop_left(bytes);
+            while( bytes->len && sv_chop_left(bytes) != ESC && sv_first(bytes) != STRING_TERMINATOR);
+            if(bytes->len) sv_chop_left(bytes);
             return;
         }
 
@@ -636,6 +660,10 @@ void minal_parse_ansi_osc(Minal* m, StringView* bytes)
 
 void minal_parse_ansi_csi(Minal* m, StringView* bytes)
 {
+    if(bytes->len == 0) {
+        printf("incomplete CSI sequence\n");
+        return;
+    }
     uint8_t b = sv_first(bytes);
 
     // the <ops> in [!, =, >, ?, u, s] comes before the arguments
@@ -1556,7 +1584,9 @@ size_t minal_keyboard_to_ansi(Minal* m, SDL_KeyboardEvent ev, char out[10])
         switch (ev.key) {
             // case SDLK_F1:          out = "𒀀"; n = strlen("𒀀"); break;// multibyte char for testing
 
-            case SDLK_BACKSPACE:   out[n++] = BACKSPACE; break;
+            // NOTE: tmux and nvim do not process 0x08 (BS) the same as del
+            // case SDLK_BACKSPACE:   out[n++] = BACKSPACE; break;
+            case SDLK_BACKSPACE:   out[n++] = 0x7f;     break;
             case SDLK_TAB:         out[n++] = TAB; break;
             case SDLK_RETURN:      out[n++] = CARRIAGERET; if (m->autonewline) out[n++] = LINEFEED; break;
             case SDLK_UP:          out[n++] = ESC; out[n++] = m->cursor_application ? '[' : 'O'; out[n++] = 'A'; break; 
@@ -1667,17 +1697,24 @@ SDL_FRect minal_cursor_to_rect(Minal* m)
  ******************************************************************************/
 void minal_receiver(Minal* m)
 {
+    static char _buf[_32K];
+
     size_t offset = 0;
-    char _buf[_32K];
     while (true) {
         assert(offset < _32K);
         int n = minal_read_nonblock(m, _buf + offset, _32K - offset);
-        // TODO: check ioctl(fd, FIONREAD, ...) 
-        // to know if there's remaining bytes
         if (n == 0) break;
-        offset += n;
+
+        //NOTE: for some reason read is receiving \0D\0A when enter is spammed
+        if(n == 2 && _buf[offset]==0x0d && _buf[offset+1]==0x0a) {
+            // NOTE: inside enter spamming
+        }
+        else offset += n;
+
         if (offset == _32K) break;
     }
+
+    if(offset == 0) return;
 
     StringView view = (StringView) {
         .data = _buf,
@@ -1687,6 +1724,7 @@ void minal_receiver(Minal* m)
     debug_dump(view);
 
     char* prev;
+    
     while (view.len > 0) {
         prev = (char*)view.data;
         uint8_t ch = (uint8_t)sv_chop_left(&view);
@@ -1768,24 +1806,44 @@ void minal_receiver(Minal* m)
             minal_cursor_move(m, m->cursor.col + 1, m->cursor.row);
         }
     }
+
 }
 
 int minal_read_nonblock(Minal* m, char* buf, size_t n)
 {
-    int oldf = fcntl(m->master_fd, F_GETFL, 0);
-    assert(oldf != -1);
-    int ret = fcntl(m->master_fd, F_SETFL, oldf | O_NONBLOCK);
-    assert(ret != -1);
-    int res = read(m->master_fd, buf, n);
+    int bytes_available;
+   
+    usleep(1);
+
+    if (ioctl(m->master_fd, FIONREAD, &bytes_available) == -1) {
+        printf("ERROR: ioctl FIONREAD: %s\n", strerror(errno));
+        exit(1);
+    }
+    if (bytes_available == 0) return 0;
+    size_t to_read = (bytes_available < n) ? bytes_available : n;
+    int res = read(m->master_fd, buf, to_read);
     if (res == -1) {
-        if (errno != EAGAIN && errno != EWOULDBLOCK) {
-            printf("ERROR: read nonblock: %s\n", strerror(errno));
-            exit(1);
-        }
-        return 0;
+        printf("ERROR: read: %s\n", strerror(errno));
+        exit(1);
     }
     return res;
 }
+// int minal_read_nonblock(Minal* m, char* buf, size_t n)
+// {
+//     int oldf = fcntl(m->master_fd, F_GETFL, 0);
+//     assert(oldf != -1);
+//     int ret = fcntl(m->master_fd, F_SETFL, oldf | O_NONBLOCK);
+//     assert(ret != -1);
+//     int res = read(m->master_fd, buf, n);
+//     if (res == -1) {
+//         if (errno != EAGAIN && errno != EWOULDBLOCK) {
+//             printf("ERROR: read nonblock: %s\n", strerror(errno));
+//             exit(1);
+//         }
+//         return 0;
+//     }
+//     return res;
+// }
 
 
 /*******************************************************************************
