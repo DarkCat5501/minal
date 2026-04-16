@@ -1,4 +1,5 @@
 #include "minal.h"
+#include "fontconfig/fontconfig.h"
 #include <SDL3/SDL_rect.h>
 
 /*******************************************************************************
@@ -15,12 +16,76 @@ int main(void)
     return 0;
 }
 
+
+char* minal_request_font(const char* pattern) {
+    FcConfig *config;
+    FcPattern *font_pattern;
+    FcPattern *fallback_pattern;
+    FcResult result;
+    FcFontSet *fontset;
+    FcChar8 *font_file = NULL;
+    char *result_str = NULL;
+
+    config = FcConfigGetCurrent();
+
+    font_pattern = FcPatternCreate();
+    FcPatternAddInteger(font_pattern, FC_SPACING, FC_MONO);
+    FcPatternAddString(font_pattern, FC_STYLE, (FcChar8*)"complete");
+    FcPatternAddInteger(font_pattern, FC_WEIGHT, FC_WEIGHT_NORMAL);
+    FcPatternAddInteger(font_pattern, FC_SLANT, FC_SLANT_ROMAN);
+
+    if (pattern && pattern[0] != '\0') {
+        FcPatternAddString(font_pattern, FC_FAMILY, (FcChar8*)pattern);
+    }
+
+    fontset = FcFontSort(config, font_pattern, FcTrue, NULL, &result);
+    if (fontset && fontset->nfont > 0) {
+        FcPattern *best_match = fontset->fonts[0];
+        FcPatternGetString(best_match, FC_FILE, 0, &font_file);
+        if (font_file) {
+            result_str = strdup((char*)font_file);
+        }
+    }
+
+    // Default fallback
+    if (!result_str) {
+        fallback_pattern = FcPatternCreate();
+        FcPatternAddInteger(font_pattern, FC_SPACING, FC_MONO);
+        FcPatternAddString(font_pattern, FC_FAMILY, (FcChar8*)"monospace");
+        FcPatternAddString(font_pattern, FC_STYLE, (FcChar8*)"complete");
+        FcPatternAddBool(font_pattern, FC_SCALABLE, FcTrue);
+
+        FcPatternAddInteger(font_pattern, FC_WEIGHT, FC_WEIGHT_NORMAL);
+        FcPatternAddInteger(font_pattern, FC_SLANT, FC_SLANT_ROMAN);
+        FcPatternAddString(font_pattern, FC_LANG, (FcChar8*)"C");
+
+        FcFontSet *fallback_fontset = FcFontSort(config, fallback_pattern, FcTrue, NULL, &result);
+        if (fallback_fontset && fallback_fontset->nfont > 0) {
+            FcPattern *fallback_match = fallback_fontset->fonts[0];
+            FcPatternGetString(fallback_match, FC_FILE, 0, &font_file);
+            if (font_file) {
+                result_str = strdup((char*)font_file);
+            }
+        }
+        FcPatternDestroy(fallback_pattern);
+        if (fallback_fontset) FcFontSetDestroy(fallback_fontset);
+    }
+
+    if (fontset) FcFontSetDestroy(fontset);
+    FcPatternDestroy(font_pattern);
+    return result_str;
+}
+
+
 Minal minal_init()
 {
     Minal m = {0};
 
+
+    FcInit();
     SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS);
     assert(TTF_Init());
+
 
     // default configs
     m.config.font_size   = DEFAULT_FONT_SIZE;
@@ -47,17 +112,23 @@ Minal minal_init()
     minal_spawn_shell(&m);
     m.run = true;
 
-    m.config.font = TTF_OpenFont(FONT_FILE, m.config.font_size);
+    char* font1 = minal_request_font("ProFont IIx Nerd Font Propo");
+    char* font2 = minal_request_font("Hack Nerd Font");
+    char* font3 = minal_request_font("FreeSerif");
+
+    printf("fonts: %s, %s & %s\n", font1, font2, font3);
+    m.config.font = TTF_OpenFont(font1, m.config.font_size);
+    // m.config.font = TTF_OpenFont(FONT_FILE, m.config.font_size);
     assert(m.config.font != NULL);
 
-    TTF_Font* fallback1 = TTF_OpenFont(FALLBACK_1,m.config.font_size); 
-    TTF_Font* fallback2 = TTF_OpenFont(FALLBACK_2,m.config.font_size); 
-    TTF_Font* fallback3 = TTF_OpenFont(FALLBACK_3,m.config.font_size); 
+    TTF_Font* fallback1 = TTF_OpenFont(font2,m.config.font_size); 
+    TTF_Font* fallback2 = TTF_OpenFont(font3,m.config.font_size); 
+    // TTF_Font* fallback3 = TTF_OpenFont(FALLBACK_3,m.config.font_size); 
     assert(fallback1 && "Could not load fallback1 font");
     assert(fallback2 && "Could not load fallback2 font");
-    assert(fallback3 && "Could not load fallback3 font");
-
-    TTF_AddFallbackFont(m.config.font, fallback3);
+    // assert(fallback3 && "Could not load fallback3 font");
+    //
+    // TTF_AddFallbackFont(m.config.font, fallback3);
     TTF_AddFallbackFont(m.config.font, fallback2);
     TTF_AddFallbackFont(m.config.font, fallback1);
 
@@ -1887,16 +1958,16 @@ void minal_render_region(Minal* m, Region region, uint8_t ticks)
     }
 
     float y = y0;
+
+    // Render backgrounds
     for (size_t row = start; row < end; ++row) {
         Line line = m->lines.items[row];
-        x = 0;
         for (size_t col = 0; col < m->config.n_cols; ++col) {
             Cell cell = line.items[col];
             Style style = cell.style;
-
             SDL_FRect bg = {
-                .x = x,
-                .y = y,
+                .x = col * m->config.cell_width,
+                .y = row * m->config.cell_height,
                 .w = m->config.cell_width,
                 .h = m->config.cell_height,
             };
@@ -1904,7 +1975,17 @@ void minal_render_region(Minal* m, Region region, uint8_t ticks)
                 SDL_SetRenderDrawColor(m->rend, style.bg_color.r, style.bg_color.g, style.bg_color.b, style.bg_color.a);
                 SDL_RenderFillRect(m->rend, &bg);
             }
-                
+        }
+    }
+
+    //Render foregrounds
+    for (size_t row = start; row < end; ++row) {
+        Line line = m->lines.items[row];
+        x = 0;
+        for (size_t col = 0; col < m->config.n_cols; ++col) {
+            Cell cell = line.items[col];
+            Style style = cell.style;
+
             if (line.len == 0) {
                 x += m->config.cell_width;
                 continue;
@@ -1930,7 +2011,6 @@ void minal_render_region(Minal* m, Region region, uint8_t ticks)
             if (style.underline) stylemask |= TTF_STYLE_UNDERLINE;
             if (style.crossout)  stylemask |= TTF_STYLE_STRIKETHROUGH;
             TTF_SetFontStyle(m->config.font, stylemask);
-
             TTF_SetTextColor(m->text, fg.r, fg.g, fg.b, fg.a);
             TTF_DrawRendererText(m->text, x, y);
             x += m->config.cell_width;
