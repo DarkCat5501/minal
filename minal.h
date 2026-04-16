@@ -42,8 +42,9 @@
 #define DEBUG_DUMP         (1 << 2)
 #define DEBUG_TRANSMITTER  (1 << 3)
 #define DEBUG_ESCAPES      (1 << 4)
+#define DEBUG_CURSOR       (1 << 5)
 // #define DEBUG (DEBUG_REGION | DEBUG_ESCAPES)
-// #define DEBUG (DEBUG_ESCAPES)
+#define DEBUG (DEBUG_REGION|DEBUG_CURSOR)
 
 #define FONT_FILE              "resources/font.ttf"
 #define FALLBACK_1             "/usr/share/fonts/TTF/Hack-Bold.ttf"

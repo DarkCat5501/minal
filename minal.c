@@ -1974,9 +1974,12 @@ void minal_render_region(Minal* m, Region region, double ticks)
     }
 
     //Render foregrounds
+    size_t cursor_row = minal_cursor2absol(m);
+
     for (size_t row = start; row < end; ++row) {
         Line line = m->lines.items[row];
         x = 0;
+
         for (size_t col = 0; col < m->config.n_cols; ++col) {
             Cell cell = line.items[col];
             Style style = cell.style;
@@ -1990,9 +1993,15 @@ void minal_render_region(Minal* m, Region region, double ticks)
             int len = utf32_to_utf8(cell.content, ch);
             TTF_SetTextString(m->text, (char*)ch, len);
 
-            SDL_Color fg;
-            if (col == m->cursor.col && row == m->cursor.row) fg = style.bg_color;
-            else                                              fg = style.fg_color;
+            SDL_Color fg = style.fg_color;
+            if (col == m->cursor.col && row == cursor_row) {
+#if DEBUG & (DEBUG_CURSOR | DEBUG_ALL) 
+                SDL_FRect r = { x,y,m->config.cell_width, m->config.cell_height};
+                SDL_SetRenderDrawColor(m->rend, 255,0,0,255);
+                SDL_RenderRect(m->rend,&r);
+#endif
+                fg = style.bg_color;
+            }
 
             if (style.faint) fg.a /= 2;
 
@@ -2095,13 +2104,22 @@ static inline void debug_dump(StringView buf)
 static inline void debug_region(Minal* m, float y0, float y)
 {
 #if DEBUG & (DEBUG_REGION | DEBUG_ALL)
-    SDL_Color c = (SDL_Color) { .r = 20, .g = 20, .b = 200, .a = 200 };
+    static int region_color = 0;
+    region_color %= 3;
+
+    SDL_Color colors[3] = {
+        (SDL_Color) { .r = 20,  .g = 20,  .b = 200, .a = 200 },
+        (SDL_Color) { .r = 20,  .g = 200, .b = 20,  .a = 200 },
+        (SDL_Color) { .r = 200, .g = 20,  .b = 20,  .a = 200 }
+    };
+
+    SDL_Color c = colors[region_color++];
     SDL_SetRenderDrawColor(m->rend, c.r, c.g, c.b, c.a);
     SDL_FRect s = (SDL_FRect) {
-        .x = 0,
-        .y = y0,
-        .w = m->config.window_width, 
-        .h = y - y0,
+        .x = 1,
+        .y = y0+1,
+        .w = m->config.window_width-2, 
+        .h = y - y0 - 2,
     };
     SDL_RenderRect(m->rend, &s);
 #endif
