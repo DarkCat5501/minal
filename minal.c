@@ -935,26 +935,7 @@ void minal_parse_ansi_csi(Minal* m, StringView* bytes)
         case DEC_SCROLL_TOPBOT_MARGIN: { 
             size_t top = argc > 0 ? argv[0] - 1 : 0;
             size_t bot = argc > 1 ? argv[1] - 1 : m->config.n_rows - 1;
-
-            top = MAX(0, top);
-            bot = MIN(m->config.n_rows - 1, bot);
-
-            if (top > bot) {
-                top = 0;
-                bot = m->config.n_rows - 1;
-            }
-
-            m->scroll_reg.start = top;
-            m->scroll_reg.end   = bot + 1;
-
-            m->above_reg.start = m->row_offset;
-            m->above_reg.end = m->row_offset + top;
-
-            m->below_reg.start = m->row_offset + bot + 1;
-            m->below_reg.end   = m->row_offset + m->config.n_rows;
-
-            minal_cursor_move(m, 0, 0);
-            minal_erase_in_display(m, ERASE_IN_DISPLAY_ALL);
+            minal_scroll_region(m, top, bot);
         }; break;
 
         case DEC_SCROLL_LEFRIG_MARGIN: { 
@@ -1158,6 +1139,28 @@ void minal_pagedown(Minal* m, size_t opt)
         }
     }
     m->row_offset += opt;
+}
+
+
+void minal_scroll_region(Minal* m, size_t top, size_t bot)
+{
+    top = MAX(0, top);
+    bot = MIN(m->config.n_rows - 1, bot);
+    if (top > bot) {
+        top = 0;
+        bot = m->config.n_rows - 1;
+    }
+
+    m->scroll_reg.start = top;
+    m->scroll_reg.end   = bot + 1;
+
+    m->above_reg.start = m->row_offset;
+    m->above_reg.end = m->row_offset + top;
+
+    m->below_reg.start = m->row_offset + bot + 1;
+    m->below_reg.end   = m->row_offset + m->config.n_rows;
+
+    minal_cursor_move(m, 0, 0);
 }
 
 void minal_graphic_mode(Minal* m, int* argv, int argc)

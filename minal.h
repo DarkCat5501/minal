@@ -42,8 +42,8 @@
 #define DEBUG_DUMP         (1 << 2)
 #define DEBUG_TRANSMITTER  (1 << 3)
 #define DEBUG_ESCAPES      (1 << 4)
-#define DEBUG (DEBUG_REGION | DEBUG_ESCAPES)
-// #define DEBUG (DEBUG_ESCAPES)
+// #define DEBUG (DEBUG_REGION | DEBUG_ESCAPES)
+#define DEBUG (DEBUG_ESCAPES)
 
 #define FONT_FILE              "resources/font.ttf"
 #define FALLBACK_1             "/usr/share/fonts/TTF/Hack-Bold.ttf"
@@ -128,7 +128,6 @@ typedef struct {
 
 typedef struct {
     Lines           lines;
-    // StringBuilder   screen;
     Cursor          cursor;
     Cursor          saved_cursor;
     Config          config;
@@ -183,6 +182,7 @@ void        minal_linefeed(Minal* m);
 void        minal_carriageret(Minal* m);
 void        minal_pageup(Minal* m, size_t opt);
 void        minal_pagedown(Minal* m, size_t opt);
+void        minal_scroll_region(Minal* m, size_t top, size_t bot);
 void        minal_graphic_mode(Minal* m, int* argv, int argc);
 SDL_Color   minal_select_color_extended(Minal* m, int r, int g, int b);
 SDL_Color   minal_select_color_index(Minal* m, int idx);

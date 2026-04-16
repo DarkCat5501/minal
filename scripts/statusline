@@ -1,0 +1,4 @@
+#!/usr/bin/bash
+echo -e "\e[30;1HSTATUS LINE - SOME INFORMATION GOES HERE\e[H"
+echo -ne "\e[1;29r"
+
