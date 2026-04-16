@@ -1586,8 +1586,8 @@ size_t minal_keyboard_to_ansi(Minal* m, SDL_KeyboardEvent ev, char out[10])
 
             // NOTE: tmux and nvim do not process 0x08 (BS) the same as del
             // case SDLK_BACKSPACE:   out[n++] = BACKSPACE; break;
-            case SDLK_BACKSPACE:   out[n++] = 0x7f;     break;
-            case SDLK_TAB:         out[n++] = TAB; break;
+            case SDLK_BACKSPACE:   out[n++] = DEL; break;
+            case SDLK_TAB:         out[n++] = TAB;  break;
             case SDLK_RETURN:      out[n++] = CARRIAGERET; if (m->autonewline) out[n++] = LINEFEED; break;
             case SDLK_UP:          out[n++] = ESC; out[n++] = m->cursor_application ? '[' : 'O'; out[n++] = 'A'; break; 
             case SDLK_DOWN:        out[n++] = ESC; out[n++] = m->cursor_application ? '[' : 'O'; out[n++] = 'B'; break;
