@@ -1,6 +1,7 @@
 #include "minal.h"
 #include "fontconfig/fontconfig.h"
 #include <SDL3/SDL_rect.h>
+#include <SDL3_ttf/SDL_ttf.h>
 
 /*******************************************************************************
  *                                                                             *
@@ -191,9 +192,9 @@ void minal_spawn_shell(Minal *m)
         login_tty(slave_fd);
 
         char *path = "/usr/bin/bash";
-        char *defaultshell = getenv("SHELL");
-        if (defaultshell != NULL)
-            path = defaultshell;
+        // char *defaultshell = getenv("SHELL");
+        // if (defaultshell != NULL)
+        //     path = defaultshell;
         setenv("SHELL", path, true);
         setenv("TERM", "st-256color", true);
 
@@ -2134,10 +2135,9 @@ void minal_render_text(Minal* m)
     double tick_secs = SDL_GetTicks() / 1000.0;
     TTF_SetTextString(m->text, "", 0);
 
-    minal_render_region(m, m->below_reg, tick_secs);
-    minal_render_region(m, m->scroll_reg, tick_secs);
     minal_render_region(m, m->above_reg,  tick_secs);
-    debug_region_log(m);
+    minal_render_region(m, m->scroll_reg, tick_secs);
+    minal_render_region(m, m->below_reg, tick_secs);
 }
 
 void minal_render_region(Minal* m, Region region, double ticks)
@@ -2146,11 +2146,13 @@ void minal_render_region(Minal* m, Region region, double ticks)
     float fastblink = blink_ratio(ticks, 20.0);
     float x = 0;
     float y0;
+
+    bool after = false;
     if (region.absolute) {
         if (region.start < m->row_offset + m->scroll_reg.start) {
             y0 = 0;
-        }
-        if (region.start > m->row_offset + m->scroll_reg.start) {
+        } else if (region.start > m->row_offset + m->scroll_reg.start) {
+            after = true;
             y0 = (m->scroll_reg.end * m->config.cell_height);
         }
     } else {
@@ -2170,22 +2172,43 @@ void minal_render_region(Minal* m, Region region, double ticks)
     float y = y0;
 
     // Render backgrounds
-    for (size_t row = start; row < end; ++row) {
-        Line line = m->lines.items[row];
+    // printf("reg---: %zu %zu\n", region.start, region.end);
+    size_t len = end - start;
+    for (size_t row = 0; row < len; row++) {
+        int absrow = region.absolute ? region.start + row : region.start + row + m->row_offset;
+        size_t relrow = region.absolute ? (absrow - (after ? m->row_offset: region.start)) : region.start + row;
+        Line line = m->lines.items[absrow];
+        // printf("row: %zu, %zu\n", absrow, relrow);
         for (size_t col = 0; col < m->config.n_cols; ++col) {
             Cell cell = line.items[col];
             Style style = cell.style;
             SDL_FRect bg = {
                 .x = col * m->config.cell_width,
-                .y = row * m->config.cell_height,
+                .y = y0 + row * m->config.cell_height,
                 .w = m->config.cell_width,
                 .h = m->config.cell_height,
             };
-            size_t absrow = minal_cursor2absol(m);
-            if (col != m->cursor.col || row != absrow || m->cursor.hidden) {
+
+            bool same_row = relrow == m->cursor.row, same_col = col == m->cursor.col;
+
+            if (same_row && same_col) {
+                SDL_SetRenderDrawColor(m->rend,0x00,0x00,0xff,255);
+                SDL_RenderRect(m->rend, &bg);
+            } else {
                 SDL_SetRenderDrawColor(m->rend, style.bg_color.r, style.bg_color.g, style.bg_color.b, style.bg_color.a);
                 SDL_RenderFillRect(m->rend, &bg);
             }
+
+            #if DEBUG & (DEBUG_CURSOR)
+            // if(same_col) {
+            //     SDL_SetRenderDrawColor(m->rend,0xff,0x00,0x00,255);
+            //     SDL_RenderRect(m->rend, &bg);
+            // }
+            // if(same_row) {
+            //     SDL_SetRenderDrawColor(m->rend,0x00,0xff,0x00,255);
+            //     SDL_RenderRect(m->rend, &bg);
+            // }
+            #endif
         }
     }
 
@@ -2210,18 +2233,10 @@ void minal_render_region(Minal* m, Region region, double ticks)
             TTF_SetTextString(m->text, (char*)ch, len);
 
             SDL_Color fg = style.fg_color;
-            if (col == m->cursor.col && row == cursor_row) {
-#if DEBUG & (DEBUG_CURSOR | DEBUG_ALL) 
-                SDL_FRect r = { x,y,m->config.cell_width, m->config.cell_height};
-                SDL_SetRenderDrawColor(m->rend, 255,0,0,255);
-                SDL_RenderRect(m->rend,&r);
-#endif
-                fg = style.bg_color;
-            }
+            // if (col == m->cursor.col) fg = style.bg_color;
 
-            if (style.faint) fg.a /= 2;
-            
-            if      (style.hidden)    fg.a = 0;
+            if      (style.faint) fg.a     /= 2;
+            if      (style.hidden)    fg.a  = 0;
             else if (style.blink)     fg.a *= blink;
             else if (style.fastblink) fg.a *= fastblink;
 
@@ -2232,12 +2247,8 @@ void minal_render_region(Minal* m, Region region, double ticks)
             if (style.crossout)  stylemask |= TTF_STYLE_STRIKETHROUGH;
             TTF_SetFontStyle(m->config.font, stylemask);
 
-            int text_w;
-            TTF_GetTextSize(m->text, &text_w, NULL);
-            float d_x = (text_w - m->config.cell_width) / 2.;
-
             TTF_SetTextColor(m->text, fg.r, fg.g, fg.b, fg.a);
-            TTF_DrawRendererText(m->text, x - d_x, y);
+            TTF_DrawRendererText(m->text, x, y);
             x += m->config.cell_width;
         }
         y += m->config.cell_height;
@@ -2256,9 +2267,9 @@ float blink_ratio(double secs, double freq)
 
 /*******************************************************************************
  *                                                                             *
- *                           DEBUG                                             *
+ *                               DEBUG                                         *
  *                                                                             *
- ******************************************************************************/
+ *******************************************************************************/
 static inline void debug_escape(char* escape)
 {
     #if DEBUG & (DEBUG_ESCAPES | DEBUG_ALL)
@@ -2325,25 +2336,23 @@ static inline void debug_transmitter(char* code)
     #endif
 }
 
-
 static inline void debug_cursor(Minal* m)
 {
-    #if DEBUG & (DEBUG_CURSOR | DEBUG_ALL)
+#if DEBUG & (DEBUG_CURSOR | DEBUG_ALL)
     Cursor c = m->cursor;
     SDL_FRect r = minal_cursor_to_rect(m);
     printf("----\n");
     printf("[CURSOR] POSITION:    { col = %zu, row = %zu }\n", c.col, c.row);
     printf("[CURSOR] RENDER RECT: { x = %f, y = %f, w = %f, h = %f }\n", r.x, r.y, r.w, r.h);
     printf("[CURSOR] HIDDEN:      { %d }\n", c.hidden);
-    printf("[CURSOR] COLORS:      { FG = %u, %u, %u, %u, \n", c.style.fg_color.r, c.style.fg_color.g, c.style.fg_color.b , c.style.fg_color.a);
-    printf("                        BG = %u, %u, %u, %u, \n", c.style.bg_color.r, c.style.bg_color.g, c.style.bg_color.b , c.style.bg_color.a);
-    printf("                        UL = %u, %u, %u, %u }\n", c.style.ul_color.r, c.style.ul_color.g, c.style.ul_color.b, c.style.ul_color.a);
-    printf("[CURSOR] STYLE:       { bold   = %d, faint     = %d, italic      = %d, underline = %d,\n", c.style.bold, c.style.faint, c.style.italic, c.style.underline);
-    printf("                        blink  = %d, fastblink = %d, inverse     = %d, \n", c.style.blink, c.style.fastblink, c.style.inverse);
-    printf("                        hidden = %d, crossout  = %d, doubleunder = %d }\n", c.style.hidden ,c.style.crossout, c.style.doubleunder);
-    #endif
+    // printf("[CURSOR] COLORS:      { FG = %u, %u, %u, %u, \n", c.style.fg_color.r, c.style.fg_color.g, c.style.fg_color.b , c.style.fg_color.a);
+    // printf("                        BG = %u, %u, %u, %u, \n", c.style.bg_color.r, c.style.bg_color.g, c.style.bg_color.b , c.style.bg_color.a);
+    // printf("                        UL = %u, %u, %u, %u }\n", c.style.ul_color.r, c.style.ul_color.g, c.style.ul_color.b, c.style.ul_color.a);
+    // printf("[CURSOR] STYLE:       { bold   = %d, faint     = %d, italic      = %d, underline = %d,\n", c.style.bold, c.style.faint, c.style.italic, c.style.underline);
+    // printf("                        blink  = %d, fastblink = %d, inverse     = %d, \n", c.style.blink, c.style.fastblink, c.style.inverse);
+    // printf("                        hidden = %d, crossout  = %d, doubleunder = %d }\n", c.style.hidden ,c.style.crossout, c.style.doubleunder);
+#endif
 }
-
 
 static inline void debug_region_log(Minal* m)
 {
@@ -2378,23 +2387,4 @@ static inline void debug_region_visual(Minal* m, float y0, float y)
     };
     SDL_RenderRect(m->rend, &s);
 #endif
-}
-
-void fonts_with_glyph(Minal m, uint32_t glyph)
-{
-    // NOTE: all the memory leaks back home
-    // some useful glyphs (used in my zsh prompt):
-    //  ➜  0x0000279C 
-    //  ✗  0x00002717 
-    m.config.font = TTF_OpenFont(FONT_FILE, m.config.font_size);
-    StringBuilder fonts = sb_from_file("fonts.txt");
-    StringView buf = sv_from_sb(fonts);
-    while (buf.len > 0) {
-        StringView filepath = sv_chop_line(&buf);
-        m.config.font = TTF_OpenFont(sv_to_cstr(filepath), m.config.font_size);
-        if (TTF_FontHasGlyph(m.config.font, glyph)) {
-            printf("%.*s\n", (int)filepath.len, filepath.data);
-        }
-    }
-    return;
 }
