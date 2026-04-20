@@ -46,12 +46,6 @@
 // #define DEBUG (DEBUG_REGION | DEBUG_ESCAPES)
 #define DEBUG (DEBUG_REGION|DEBUG_CURSOR)
 
-#define FONT_FILE              "resources/font.ttf"
-#define FALLBACK_1             "/usr/share/fonts/TTF/Hack-Bold.ttf"
-#define FALLBACK_2             "/usr/share/fonts/TTF/DejaVuSansMono.ttf"
-#define FALLBACK_3             "/usr/share/fonts/gnu-free/FreeSerif.otf"
-
-
 #define DEFAULT_FONT_SIZE   18.0f
 #define DEFAULT_DISPLAY_DPI 96
 // #define DEFAULT_N_COLS      90
