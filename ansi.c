@@ -5,184 +5,124 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <threads.h>
 
-#define ESC '\033'
+static char* C1_Control__InputMap[] = {
+  // Feeler control characters
+  [C1_Control_IND] =        "\033D",   // move cursor down one line
+  [C1_Control_NEL] =        "\033E",   // move cursor to beginning of next line
+  [C1_Control_HTS] =        "\033H",   // set tab stop at current column
+  [C1_Control_RI ] =        "\033M",   // move cursor up one line
+  [C1_Control_SS2] =        "\033N",   // invoke G2 for next character only
+  [C1_Control_SS3] =        "\033O",   // invoke G3 for next character only
+  [C1_Control_DCS] =        "\033P",   // device control sequence
+  [C1_Control_SPA] =        "\033V",   // start of guarded area
+  [C1_Control_EPA] =        "\033W",   // end of guarded area
+  [C1_Control_SOS] =        "\033X",   // generic string sequence
+  [C1_Control_RTI] =        "\033Z",   // return to index (move cursor up)
+  [C1_Control_CSI] =        "\033[",   // control sequence introducer
+  [C1_Control_ST ] =        "\033\\",  // string terminator
+  [C1_Control_OSC] =        "\033]",   // operating system command
+  [C1_Control_APC] =        "\033_",   // application program command
 
-typedef enum {
-  C1_Control_Invalid = -1,
-  C1_Control_IND,
-  C1_Control_NEL,
-  C1_Control_HTS,
-  C1_Control_RI ,
-  C1_Control_SS2,
-  C1_Control_SS3,
-  C1_Control_DCS,
-  C1_Control_SPA,
-  C1_Control_EPA,
-  C1_Control_SOS,
-  C1_Control_RTI,
-  C1_Control_CSI,
-  C1_Control_ST ,
-  C1_Control_OSC,
-  C1_Control_APC,
-  C1_Control_VT100_SP,
-  C1_Control_VT100_DEC,
-  C1_Control_VT100_SEL,
-  C1_Control_VT100_G0,
-  C1_Control_VT100_G1,
-  C1_Control_VT100_G2,
-  C1_Control_VT100_G3,
-  C1_Control_Max = C1_Control_VT100_G3
-} C1_Control;
+  // VT100 special (2-byte after ESC)
+  [C1_Control_VT100_SP]  = "\033 ",   // space
+  [C1_Control_VT100_DEC] = "\033#",   // DEC-specific control
+  [C1_Control_VT100_SEL] = "\033%",   // selection control
+  [C1_Control_VT100_G0]  = "\033(",   // designate G0 character set
+  [C1_Control_VT100_G1]  = "\033)",   // designate G1 character set
+  [C1_Control_VT100_G2]  = "\033*",   // designate G2 character set
+  [C1_Control_VT100_G3]  = "\033+",   // designate G3 character set
 
-typedef enum {
-  VT100_Special_Invalid = -1,
-  VT100_Special_DECSC,  // Save Cursor (DECSC)
-  VT100_Special_DECRC,  // Restore Cursor (DECRC)
-  VT100_Special_DECPAM, // Application Keypad (DECPAM)
-  VT100_Special_DECPNM, // Normal Keypad (DECPNM)
-  VT100_Special_CTLLCS, // Cursor to lower left corner of screen (if enabled by the hpLowerleftBugCompat resource).
-  VT100_Special_RIS,    // Full Reset (RIS)
-  VT100_Special_ML,     // Memory Lock (per HP terminals). Locks memory above the cursor.
-  VT100_Special_MU,     // Memory Unlock (per HP terminals)
-  VT100_Special_LS2,    // Invoke the G2 Character Set as GL (LS2).
-  VT100_Special_LS3,    // Invoke the G3 Character Set as GL (LS3).
-  VT100_Special_LS3R,   // Invoke the G3 Character Set as GR (LS3R).
-  VT100_Special_LS2R,   // Invoke the G2 Character Set as GR (LS2R).
-  VT100_Special_LS1R,   // Invoke the G1 Character Set as GR (LS1R).
-  VT100_Special_Max = VT100_Special_LS1R
-} VT100_Special;
+  // Special VT100 sequences
+  [C1_Control_Special_DECSC] =  "\0337",  // save cursor position
+  [C1_Control_Special_DECRC] =  "\0338",  // restore cursor position
+  [C1_Control_Special_DECPAM]=  "\033=",  // application keypad mode
+  [C1_Control_Special_DECPNM]=  "\033>",  // normal keypad mode
+  [C1_Control_Special_CTLLCS]=  "\033F",  // cursor to lower-left corner
+  [C1_Control_Special_RIS]   =  "\033c",  // full reset
+  [C1_Control_Special_ML]    =  "\033l",  // memory lock
+  [C1_Control_Special_MU]    =  "\033m",  // memory unlock
+  [C1_Control_Special_LS2]   =  "\033n",  // lock shift 2
+  [C1_Control_Special_LS3]   =  "\033o",  // lock shift 3
+  [C1_Control_Special_LS3R]  =  "\033|",  // lock shift 3 right
+  [C1_Control_Special_LS2R]  =  "\033}",  // lock shift 2 right
+  [C1_Control_Special_LS1R]  =  "\033~",  // lock shift 1 right
+};
+static_assert(sizeof(C1_Control__InputMap)/sizeof(C1_Control__InputMap[0]) == C1_Control__Length,"Unmapped C1_Control InputMap");
 
+static char* C1_Control__ToString[] = {
+  [C1_Control_IND]           =  "IND",
+  [C1_Control_NEL]           =  "NEL",
+  [C1_Control_HTS]           =  "HTS",
+  [C1_Control_RI ]           =  "RI",
+  [C1_Control_SS2]           =  "SS2",
+  [C1_Control_SS3]           =  "SS3",
+  [C1_Control_DCS]           =  "DCS",
+  [C1_Control_SPA]           =  "SPA",
+  [C1_Control_EPA]           =  "EPA",
+  [C1_Control_SOS]           =  "SOS",
+  [C1_Control_RTI]           =  "RTI",
+  [C1_Control_CSI]           =  "CSI",
+  [C1_Control_ST ]           =  "ST",
+  [C1_Control_OSC]           =  "OSC",
+  [C1_Control_APC]           =  "APC",
+  [C1_Control_VT100_SP]      =  "VT100SP",
+  [C1_Control_VT100_DEC]     =  "VT100DEC",
+  [C1_Control_VT100_SEL]     =  "VT100SEL",
+  [C1_Control_VT100_G0]      =  "VT100G0",
+  [C1_Control_VT100_G1]      =  "VT100G1",
+  [C1_Control_VT100_G2]      =  "VT100G2",
+  [C1_Control_VT100_G3]      =  "VT100G3",
+  //special
+  [C1_Control_Special_DECSC] =  "VT100-DECSC",
+  [C1_Control_Special_DECRC] =  "VT100-DECRC",
+  [C1_Control_Special_DECPAM ]= "VT100-DECPAM",
+  [C1_Control_Special_DECPNM ]= "VT100-DECPNM",
+  [C1_Control_Special_CTLLCS ]= "VT100-CTLLCS",
+  [C1_Control_Special_RIS]   =  "VT100-RIS",
+  [C1_Control_Special_ML]    =  "VT100-ML",
+  [C1_Control_Special_MU]    =  "VT100-MU",
+  [C1_Control_Special_LS2]   =  "VT100-LS2",
+  [C1_Control_Special_LS3]   =  "VT100-LS3",
+  [C1_Control_Special_LS3R]  =  "VT100-LS3R",
+  [C1_Control_Special_LS2R]  =  "VT100-LS2R",
+  [C1_Control_Special_LS1R]  =  "VT100-LS1R",
+};
+static_assert(sizeof(C1_Control__ToString)/sizeof(C1_Control__ToString[0]) == C1_Control__Length,"Unmapped C1_Control ToString");
 
-typedef enum {
-  VT100_CharSet_Invalid = -1,
-  VT100_CharSet_Special_LineDrawing, //0 → DEC Special Character and Line Drawing Set
-  VT100_CharSet_UnitedKingdom,       //A → United Kingdom (UK)
-  VT100_CharSet_UnitedStates,//B → United States (USASCII)
-  VT100_CharSet_Dutch,//4 → Dutch
-  VT100_CharSet_Finnish,//C or 5 → Finnish
-  VT100_CharSet_French,//R → French
-  VT100_CharSet_FrenchCanadian,//Q → French Canadian
-  VT100_CharSet_German,//K → German
-  VT100_CharSet_Italian,//Y → Italian
-  VT100_CharSet_Norwegian,//E or 6 → Norwegian/Danish
-  VT100_CharSet_Spanish,//Z → Spanish
-  VT100_CharSet_Swidsh,//H or 7 → Swedish
-  VT100_CharSet_Swiss,//= → Swiss
-  VT100_CharSet_Max = VT100_CharSet_Swiss
-} VT100_CharSet;
-
-static char* C1_Controls_Map[] = {
-  [C1_Control_IND] =  "\033D",
-  [C1_Control_NEL] =  "\033E",
-  [C1_Control_HTS] =  "\033H",
-  [C1_Control_RI ] =  "\033M",
-  [C1_Control_SS2] =  "\033N",
-  [C1_Control_SS3] =  "\033O",
-  [C1_Control_DCS] =  "\033P",
-  [C1_Control_SPA] =  "\033V",
-  [C1_Control_EPA] =  "\033W",
-  [C1_Control_SOS] =  "\033X",
-  [C1_Control_RTI] =  "\033Z",
-  [C1_Control_CSI] =  "\033[",
-  [C1_Control_ST ] =  "\033\\",
-  [C1_Control_OSC] =  "\033]",
-  [C1_Control_APC] =  "\033_",
-  [C1_Control_VT100_SP]   = "\033 ",
-  [C1_Control_VT100_DEC]  = "\033#",
-  [C1_Control_VT100_SEL]  = "\033%",
-  [C1_Control_VT100_G0]   = "\033(",
-  [C1_Control_VT100_G1]   = "\033)",
-  [C1_Control_VT100_G2]   = "\033*",
-  [C1_Control_VT100_G3]   = "\033+",
+static char* VT100_CharSet__InputMap[] = {
+  [VT100_CharSet_Special_LineDrawing] = "0",
+  [VT100_CharSet_UnitedKingdom]       = "A",
+  [VT100_CharSet_UnitedStates]        = "B",
+  [VT100_CharSet_Dutch]               = "4",
+  [VT100_CharSet_Finnish]             = "C5",
+  [VT100_CharSet_French]              = "R",
+  [VT100_CharSet_FrenchCanadian]      = "Q",
+  [VT100_CharSet_German]              = "K",
+  [VT100_CharSet_Italian]             = "Y",
+  [VT100_CharSet_Norwegian]           = "E6",
+  [VT100_CharSet_Spanish]             = "Z",
+  [VT100_CharSet_Swidsh]              = "H7",
+  [VT100_CharSet_Swiss]               = "= ",
 };
 
-static char* C1_Controls_ToString[] = {
-  [C1_Control_IND] =  "IND",
-  [C1_Control_NEL] =  "NEL",
-  [C1_Control_HTS] =  "HTS",
-  [C1_Control_RI ] =  "RI",
-  [C1_Control_SS2] =  "SS2",
-  [C1_Control_SS3] =  "SS3",
-  [C1_Control_DCS] =  "DCS",
-  [C1_Control_SPA] =  "SPA",
-  [C1_Control_EPA] =  "EPA",
-  [C1_Control_SOS] =  "SOS",
-  [C1_Control_RTI] =  "RTI",
-  [C1_Control_CSI] =  "CSI",
-  [C1_Control_ST ] =  "ST",
-  [C1_Control_OSC] =  "OSC",
-  [C1_Control_APC] =  "APC",
-  [C1_Control_VT100_SP]   = "VT100SP",
-  [C1_Control_VT100_DEC]  = "VT100DEC",
-  [C1_Control_VT100_SEL]  = "VT100SEL",
-  [C1_Control_VT100_G0]   = "VT100G0",
-  [C1_Control_VT100_G1]   = "VT100G1",
-  [C1_Control_VT100_G2]   = "VT100G2",
-  [C1_Control_VT100_G3]   = "VT100G3",
-};
-
-static char* VT100_CharSets_Map[] = {
-  [VT100_CharSet_Special_LineDrawing] =   "0",
-  [VT100_CharSet_UnitedKingdom] =         "A",
-  [VT100_CharSet_UnitedStates] =          "B",
-  [VT100_CharSet_Dutch] =                 "4",
-  [VT100_CharSet_Finnish] =               "C5",
-  [VT100_CharSet_French] =                "R",
-  [VT100_CharSet_FrenchCanadian] =        "Q",
-  [VT100_CharSet_German] =                "K",
-  [VT100_CharSet_Italian] =               "Y",
-  [VT100_CharSet_Norwegian] =             "E6",
-  [VT100_CharSet_Spanish] =               "Z",
-  [VT100_CharSet_Swidsh] =                "H7",
-  [VT100_CharSet_Swiss] =                 "=",
-};
-
-static char* VT100_Specials_Map[] = {
- [VT100_Special_DECSC] = "\0337",
- [VT100_Special_DECRC] = "\0338",
- [VT100_Special_DECPAM]= "\033=",
- [VT100_Special_DECPNM]= "\033>",
- [VT100_Special_CTLLCS]= "\033F",
- [VT100_Special_RIS]   = "\033c",
- [VT100_Special_ML]    = "\033l",
- [VT100_Special_MU]    = "\033m",
- [VT100_Special_LS2]   = "\033n",
- [VT100_Special_LS3]   = "\033o",
- [VT100_Special_LS3R]  = "\033|",
- [VT100_Special_LS2R]  = "\033}",
- [VT100_Special_LS1R]  = "\033~",
-};
-
+static_assert(sizeof(VT100_CharSet__InputMap)/sizeof(VT100_CharSet__InputMap[0]) == VT100_CharSet__Length,"Unmapped VT100_CharSet InputMap");
 
 static C1_Control ansi_match_c1_controls(const char* data, size_t len) {
-  static_assert(C1_Control_Max == C1_Control_VT100_G3, "Unhandled C1 Control");
   if(len < 2) goto invalid;
-
-  for(int i=0;i<C1_Control_Max;i++) {
-    if(strncmp(C1_Controls_Map[i],data,2)==0) return (C1_Control)i;
+  for(int i=0;i<C1_Control__Length;i++) {
+  if(strncmp(C1_Control__InputMap[i],data,2)==0) return (C1_Control)i;
   }
 invalid:
   return C1_Control_Invalid;
 }
 
-static VT100_Special ansi_match_vt100_spacials(const char* data, size_t len) {
-  static_assert(VT100_Special_Max == VT100_Special_LS1R, "Unhandle VT100 Special");
-  if(len < 2) goto invalid;
-
-  for(int i=0;i<VT100_Special_Max;i++) {
-    if(strncmp(VT100_Specials_Map[i],data,2)==0) return (VT100_Special)i;
-  }
-invalid:
-  return VT100_Special_Invalid;
-}
-
 static VT100_CharSet ansi_match_vt100_charset(const char* data, size_t len) {
-  static_assert(VT100_CharSet_Max == VT100_CharSet_Swiss, "Unhandle VT100 CharSet");
   if(len < 2) goto invalid;
 
-  for(int i=0;i<VT100_CharSet_Max;i++) {
-    if(strncmp(VT100_CharSets_Map[i],data,2)==0) return (VT100_CharSet)i;
+  for(int i=0;i<VT100_CharSet__InputMap;i++) {
+  if(strncmp(VT100_CharSet__InputMap[i],data,2)==0) return (VT100_CharSet)i;
   }
 invalid:
   return VT100_CharSet_Invalid;
@@ -190,64 +130,56 @@ invalid:
 
 void ansi_debug(const char* data, size_t len) {
   for(size_t i=0;i<len;i++) {
-    C1_Control ctr = ansi_match_c1_controls(data+i,len-i);
-    if(ctr != C1_Control_Invalid) {
-      printf("<%s>", C1_Controls_ToString[ctr]);
-      i+=1;
-    } else {
-      if(data[i] == ESC) printf("<ESC>");
-      else if(isprint(data[i])) printf("%c",data[i]);
-      else printf("\\%02X", (uint8_t)data[i]);
-    }
+  C1_Control ctr = ansi_match_c1_controls(data+i,len-i);
+  if(ctr != C1_Control_Invalid) {
+    printf("<%s>", C1_Control__ToString[ctr]);
+    i+=1;
+  } else {
+    if(data[i] == ESC) printf("<ESC>");
+    else if(isprint(data[i])) printf("%c",data[i]);
+    else printf("\\%02X", (uint8_t)data[i]);
+  }
   }
 }
 
-bool ansi_find_cmd_end(const char* data, size_t len, size_t* out_len) {
+bool ansi_find_cmd_end(const char* data, size_t len, size_t* out_len, C1_Control* out_ctrl) {
 
   if(data[0]!= ESC) return false;
 
   C1_Control ctr = ansi_match_c1_controls(data,len);
-  if(ctr != C1_Control_Invalid) goto handle_c1;
-  
-  VT100_Special spc = ansi_match_vt100_spacials(data,len);
-  if(spc != VT100_Special_Invalid) goto handle_vt100_special;
-
-  return false;
-
-handle_vt100_special:
-  // printf("S");
-  if(out_len) *out_len = strlen(VT100_Specials_Map[spc]);
+  if(ctr == C1_Control_Invalid) return false;
+  else if(ctr >= C1_Control_Special_Start && ctr <= C1_Control_Special_Max) {
+  if(out_len) *out_len = strlen(C1_Control__InputMap[ctr]);
   return true;
+  }
 
-handle_c1:;
-
-  size_t C1_len = (ctr != C1_Control_Invalid) ? strlen(C1_Controls_Map[ctr]): 2;
+  size_t C1_len = (ctr != C1_Control_Invalid) ? strlen(C1_Control__InputMap[ctr]): 2;
   switch(ctr) {
-    case C1_Control_Invalid:
-      // printf("<Invalid C1 control: "); ansi_debug(data, C1_len); printf(">");
-      if(out_len) *out_len = C1_len;
-      return true;
-    case C1_Control_CSI: break;
-    case C1_Control_VT100_G0:
-    case C1_Control_VT100_G1:
-    case C1_Control_VT100_G2:
-    case C1_Control_VT100_G3: {
-      if(out_len) *out_len = C1_len + 1;
-    } return true;
+  case C1_Control_Invalid:
+    // printf("<Invalid C1 control: "); ansi_debug(data, C1_len); printf(">");
+    if(out_len) *out_len = C1_len;
+    return true;
+  case C1_Control_CSI: break;
+  case C1_Control_VT100_G0:
+  case C1_Control_VT100_G1:
+  case C1_Control_VT100_G2:
+  case C1_Control_VT100_G3: {
+    if(out_len) *out_len = C1_len + 1;
+  } return true;
 
-    default: {
-      printf("<Unhandled C1 control: "); ansi_debug(C1_Controls_Map[ctr], C1_len ); printf(">");
-      if(out_len) *out_len = C1_len;
-      return true;
-    }
+  default: {
+    printf("<Unhandled C1 control: "); ansi_debug(C1_Control__InputMap[ctr], C1_len ); printf(">");
+    if(out_len) *out_len = C1_len;
+    return true;
+  }
   }
 
 
   for(size_t i=C1_len;i<len;i++) {
-    if((0x40 <= data[i] && data[i] <= 0x7E)) {
-      if(out_len) *out_len = i+1;
-      return true;
-    };
+  if((0x40 <= data[i] && data[i] <= 0x7E)) {
+    if(out_len) *out_len = i+1;
+    return true;
+  };
   }
   return false;
 }
@@ -302,703 +234,301 @@ int ansi_str_to_int(const char* str, size_t len, int def) {
   return n;
 }
 
-bool ansi_split_int_args(const char* data, size_t len, int* out_n, int def) {
-  const char* out; size_t out_len;
-  if(!ansi_split_args(data,len,&out,&out_len)) {
-    *out_n = def;
-    return false;
-  }
-  *out_n = ansi_str_to_int(out,out_len,def);
+static bool ansi_int_list_grow(ANSI_IntList* out) {
+  size_t new_cap = (out->cap == 0) ? 8 : out->cap * 2;
+  int* new_items = realloc(out->items, sizeof(int) * new_cap);
+  if(!new_items) { free(out->items); out->items = NULL; out->cap = 0; out->len = 0; return false; }
+  out->items = new_items;
+  out->cap = new_cap;
   return true;
 }
 
-static const char* current_data = NULL;
-static size_t current_index     = 0;
-
-bool ansi_split_args(const char* data, size_t len, const char** out, size_t* out_len) {
-
-  if(data) {
-    current_data = data;
-    current_index = 0;
-  }
-
-  data = current_data;
-
-  if(data != current_data) {
-    current_index = 0;
-  }
-
-  if(current_index > len) return false;
-
-  for(size_t i=current_index;i<len;i++) {
-    char ch = data[i];
-
-    if(ch == ';' || ch == ':') {
-      *out = data + current_index;
-      *out_len = i - current_index;
-      current_index = i+1;
-      return true;
+bool ansi_parse_int_list(const char* data, size_t len, ANSI_IntList* out, int def) {
+  if(!data || !out) return false;
+  
+  out->items = NULL;
+  out->len = 0;
+  out->cap = 0;
+  
+  int current = 0;
+  bool has_digit = false;
+  
+  for(size_t i = 0; i <= len; i++) {
+    char ch = (i < len) ? data[i] : ';'; // Treat end as separator
+    
+    if(ch >= '0' && ch <= '9') {
+      current = current * 10 + (ch - '0');
+      has_digit = true;
+    } else if(ch == ';' || ch == ':') {
+      // Separator - add current value
+      if(out->len + 1 > out->cap && !ansi_int_list_grow(out)) return false;
+      out->items[out->len++] = has_digit ? current : def;
+      current = 0;
+      has_digit = false;
+    } else {
+      // Non-digit, non-separator - treat as separator with default
+      if(has_digit) {
+        if(out->len + 1 > out->cap && !ansi_int_list_grow(out)) return false;
+        out->items[out->len++] = current;
+      }
+      current = 0;
+      has_digit = false;
     }
   }
-
-  *out = data + current_index;
-  *out_len = len - current_index;
-  current_index = len;
   
   return true;
 }
 
+//=============================================================================
+// ansi_decode_cmd - Main decoder function
+//=============================================================================
 
-// void minal_parse_ansi_osc(Minal* m, StringView* bytes)
-// {
-//     uint8_t b = sv_first(bytes);
-//
-//     int argv[10];
-//     int argc = 0;
-//     if (isdigit(b)) {
-//         minal_parse_ansi_args(m, bytes, &argc, argv);
-//         assert(argc > 0);
-//         b = argv[0];
-//     }
-//
-//     switch (b) {
-//         case STP_ICON_NAME_WINDOW_TITLE: {
-//             printf("TODO: STP_ICON_NAME_WINDOW_TITLE\n");
-//         }; break;
-//
-//         case STP_ICON_NAME: {
-//             printf("TODO: STP_ICON_NAME\n");
-//         }; break;
-//
-//         case STP_WINDOW_TITLE: {
-//             printf("TODO: STP_WINDOW_TITLE\n");
-//         }; break;
-//
-//         case STP_X_PROPERTY: {
-//             printf("TODO: STP_X_PROPERTY\n");
-//         }; break;
-//
-//         case STP_COLOR_NUMBER: {
-//             printf("TODO: STP_COLOR_NUMBER\n");
-//         }; break;
-//
-//         case STP_SPECIAL_COLOR_NUMBER: {
-//             printf("TODO: STP_SPECIAL_COLOR_NUMBER\n");
-//         }; break;
-//
-//         case STP_TOGGLE_SPECIAL_CLRNUM: {
-//             printf("TODO: STP_TOGGLE_SPECIAL_CLRNUM\n");
-//         }; break;
-//
-//         case STP_VT100_FG_COLOR: {
-//             printf("TODO: STP_VT100_FG_COLOR\n");
-//         }; break;
-//
-//         case STP_VT100_BG_COLOR: {
-//             printf("TODO: STP_VT100_BG_COLOR\n");
-//         }; break;
-//
-//         case STP_TEXT_CURSOR_COLOR: {
-//             printf("TODO: STP_TEXT_CURSOR_COLOR\n");
-//         }; break;
-//
-//         case STP_POINTER_FG_COLOR: {
-//             printf("TODO: STP_POINTER_FG_COLOR\n");
-//         }; break;
-//
-//         case STP_POINTER_BG_COLOR: {
-//             printf("TODO: STP_POINTER_BG_COLOR\n");
-//         }; break;
-//
-//         case STP_TEKTRONIX_FG_COLOR: {
-//             printf("TODO: STP_TEKTRONIX_FG_COLOR\n");
-//         }; break;
-//
-//         case STP_TEKTRONIX_BG_COLOR: {
-//             printf("TODO: STP_TEKTRONIX_BG_COLOR\n");
-//         }; break;
-//
-//         case STP_HIGHLIGHT_BG_COLOR: {
-//             printf("TODO: STP_HIGHLIGHT_BG_COLOR\n");
-//         }; break;
-//
-//         case STP_TEKTRONIX_CURSOR_COLOR: {
-//             printf("TODO: STP_TEKTRONIX_CURSOR_COLOR\n");
-//         }; break;
-//
-//         case STP_HIGHLIGHT_FG_COLOR: {
-//             printf("TODO: STP_HIGHLIGHT_FG_COLOR\n");
-//         }; break;
-//
-//         case STP_POINTER_CURSOR_SHAPE: {
-//             printf("TODO: STP_POINTER_CURSOR_SHAPE\n");
-//         }; break;
-//
-//         case STP_CHANGE_LOG_FILE: {
-//             printf("TODO: STP_CHANGE_LOG_FILE\n");
-//         }; break;
-//
-//         case STP_SET_FONT: {
-//             printf("TODO: STP_SET_FONT\n");
-//         }; break;
-//
-//         case STP_FOR_EMACS: {
-//             printf("TODO: STP_FOR_EMACS\n");
-//         }; break;
-//
-//         case STP_MANIP_SELECTION_DATA: {
-//             printf("TODO: STP_MANIP_SELECTION_DATA\n");
-//         }; break;
-//
-//         case STP_XTERM_QUERY_ALLOWED: {
-//             printf("TODO: STP_XTERM_QUERY_ALLOWED\n");
-//         }; break;
-//
-//         case STP_XTERM_QUERY_DISALLOWED: {
-//             printf("TODO: STP_XTERM_QUERY_DISALLOWED\n");
-//         }; break;
-//
-//         case STP_XTERM_QUERY_ALLOWABLE: {
-//             printf("TODO: STP_XTERM_QUERY_ALLOWABLE\n");
-//         }; break;
-//
-//         case STP_RESET_COLOR: {
-//             printf("TODO: STP_RESET_COLOR\n");
-//         }; break;
-//
-//         case STP_RESET_SPECIAL_COLOR: {
-//             printf("TODO: STP_RESET_SPECIAL_COLOR\n");
-//         }; break;
-//
-//         case STP_TOGGLE_SPECIAL_COLOR: {
-//             printf("TODO: STP_TOGGLE_SPECIAL_COLOR\n");
-//         }; break;
-//
-//         case STP_RESET_VT100_TXTFGCLR: {
-//             printf("TODO: STP_RESET_VT100_TXTFGCLR\n");
-//         }; break;
-//
-//         case STP_RESET_VT100_TXTBGCLR: {
-//             printf("TODO: STP_RESET_VT100_TXTBGCLR\n");
-//         }; break;
-//
-//         case STP_RESET_TEXT_CURSOR_COLOR: {
-//             printf("TODO: STP_RESET_TEXT_CURSOR_COLOR\n");
-//         }; break;
-//
-//         case STP_RESET_POINTER_FG_COLOR: {
-//             printf("TODO: STP_RESET_POINTER_FG_COLOR\n");
-//         }; break;
-//
-//         case STP_RESET_POINTER_BG_COLOR: {
-//             printf("TODO: STP_RESET_POINTER_BG_COLOR\n");
-//         }; break;
-//
-//         case STP_RESET_TKTX_FG_COLOR: {
-//             printf("TODO: STP_RESET_TKTX_FG_COLOR\n");
-//         }; break;
-//
-//         case STP_RESET_TKTX_BG_COLOR: {
-//             printf("TODO: STP_RESET_TKTX_BG_COLOR\n");
-//         }; break;
-//
-//         case STP_RESET_HIGHLIGHT_COLOR: {
-//             printf("TODO: STP_RESET_HIGHLIGHT_COLOR\n");
-//         }; break;
-//
-//         case STP_RESET_TKTX_CURSOR_COLOR: {
-//             printf("TODO: STP_RESET_TKTX_CURSOR_COLOR\n");
-//         }; break;
-//
-//         case STP_RESET_HIGHLIGHT_FGCOLOR: {
-//             printf("TODO: STP_RESET_HIGHLIGHT_FGCOLOR\n");
-//         }; break;
-//
-//         case STP_SET_ICON_TO_FILE: {
-//             printf("TODO: STP_SET_ICON_TO_FILE\n");
-//         }; break;
-//
-//         case STP_SET_WINDOW_TITLE: {
-//             printf("TODO: STP_SET_WINDOW_TITLE\n");
-//         }; break;
-//
-//         case STP_SET_ICON_LABEL: {
-//             printf("TODO: STP_SET_ICON_LABEL\n");
-//         }; break;
-//
-//         case STP_TODO_FIGURE_THIS_OUT: {
-//             printf("TODO: ESC OSC 7; <t> ST => WHAT THE F IS ?THIS MA?N?????\n");
-//         }; break;
-//
-//
-//         default: printf("UNKNOWN OSC COMMAND: %08b | %02X (%c)\n", b, b, b); break;
-//     }
-//
-//     b = sv_chop_left(bytes);
-//     while (b != STP_TERMINATOR_1 && b != STP_TERMINATOR_2 && bytes->len) {
-//         b = sv_chop_left(bytes);
-//     }
-// }
-//
-//
-// void minal_parse_ansi_csi(Minal* m, StringView* bytes)
-// {
-//     uint8_t b = sv_first(bytes);
-//
-//     // the <ops> in [!, =, >, ?, u, s] comes before the arguments
-//     switch (b) {
-//
-//         case CSI_BANG_PREFIX: {
-//             printf("TODO: CSI !\n");
-//         }; break;
-//
-//         case CSI_EQUALS_PREFIX: {
-//             printf("TODO: CSI = \n");
-//         }; break;
-//
-//         case CSI_GT_PREFIX: {
-//             sv_chop_left(bytes);
-//             int argv[10] = {-1};
-//             int argc     = 0;
-//             minal_parse_ansi_args(m, bytes, &argc, argv);
-//
-//             b = sv_chop_left(bytes);
-//             switch (b) {
-//                 case 'T': {
-//                     printf("TODO: CSI > '%c'\n", b);
-//                 }; break;
-//                 case 'c': {
-//                     printf("TODO: CSI > '%c'\n", b);
-//                 }; break; 
-//                 case 'f': {
-//                     printf("TODO CSI > '%c'\n", b);
-//                 }; break;
-//                 case 'm': {
-//                     printf("TODO CSI > '%c'\n", b);
-//                 }; break;
-//                 case 'n': {
-//                     printf("TODO CSI > '%c'\n", b);
-//                 }; break;
-//                 case 'p': {
-//                     printf("TODO CSI > '%c'\n", b);
-//                 }; break;
-//                 case 'q': {
-//                     printf("TODO CSI > '%c'\n", b);
-//                 }; break;
-//                 case 's': {
-//                     int opt = 0;
-//                     if (argc > 0) {
-//                         opt = argv[0];
-//                     }
-//
-//                     if (opt != 0 && opt != 1) {
-//                         printf("ERROR: invalid XTSHIFTESCAPE argument: expected '0' or '1', got '%d'\n", opt);
-//                         return;
-//                     }
-//
-//                     switch (opt) {
-//                         case 0: 
-//                         case 1: {
-//                             printf("TODO: CSI XTSHITESCAPE not implemented\n");
-//                         }; break;
-//                     }
-//
-//                 }; break;
-//                 case 't': {
-//                     printf("TODO CSI > '%c'\n", b);
-//                 }; break;
-//                 default: printf("UNKNOWN subcommando for CSI_GT_PREFIX: %08b | %02X (%c)\n", b, b, b);
-//             }
-//             return;
-//         };
-//
-//         case CSI_QUESTION_MARK_PREFIX: {
-//             sv_chop_left(bytes);
-//
-//             int opt = -1;
-//             if (isdigit(sv_first(bytes))) {
-//                 opt = sv_parse_int(bytes);
-//             }
-//
-//             b = sv_chop_left(bytes);
-//
-//             switch (opt) {
-//                 case DECSET_APPLICATION_CURSOR_KEYS:    { printf("TODO: DECSET_APPLICATION_CURSOR_KEYS\n"); } break;    
-//                 case DECSET_DESIGNATE_USASCII_G0_TO_G3: { printf("TODO: DECSET_DESIGNATE_USASCII_G0_TO_G3\n"); } break; 
-//                 case DECSET_COLUMN_MODE:                { printf("TODO: DECSET_COLUMN_MODE\n"); } break;                
-//                 case DECSET_SMOOTH_SCROLL:              { printf("TODO: DECSET_SMOOTH_SCROLL\n"); } break;              
-//                 case DECSET_REVERSE_VIDEO:              { printf("TODO: DECSET_REVERSE_VIDEO\n"); } break;              
-//                 case DECSET_ORIGIN_MODE:                { printf("TODO: DECSET_ORIGIN_MODE\n"); } break;                
-//                 case DECSET_AUTO_WRAP_MODE:             { m->autowrap = b == 'h'; } break;             
-//                 case DECSET_AUTO_REPEAT_KEYS:           { printf("TODO: DECSET_AUTO_REPEAT_KEYS\n"); } break;           
-//                 case DECSET_SEND_MOUSE_X_Y_ON_BUTPRESS: { printf("TODO: DECSET_SEND_MOUSE_X_Y_ON_BUTPRESS\n"); } break; 
-//                 case DECSET_SHOW_TOOLBAR:               { printf("TODO: DECSET_SHOW_TOOLBAR\n"); } break;               
-//                 case DECSET_START_BLINKING_CURSOR:      { printf("TODO: DECSET_START_BLINKING_CURSOR\n"); } break;      
-//                 case DECSET_START_BLINKING_CURSOR_2:    { printf("TODO: DECSET_START_BLINKING_CURSOR_2\n"); } break;    
-//                 case DECSET_XOR_BLINKING_CURSOR:        { printf("TODO: DECSET_XOR_BLINKING_CURSOR\n"); } break;        
-//                 case DECSET_PRINT_FORM_FEED:            { printf("TODO: DECSET_PRINT_FORM_FEED\n"); } break;            
-//                 case DECSET_SET_PRINT_EXT_FULLSCREEN:   { printf("TODO: DECSET_SET_PRINT_EXT_FULLSCREEN\n"); } break;   
-//                 case DECSET_SHOW_CURSOR:                { printf("TODO: DECSET_SHOW_CURSOR\n"); } break;                
-//                 case DECSET_SHOW_SCROLLBAR:             { printf("TODO: DECSET_SHOW_SCROLLBAR\n"); } break;             
-//                 case DECSET_ENB_FONT_SHIFTING:          { printf("TODO: DECSET_ENB_FONT_SHIFTING\n"); } break;          
-//                 case DECSET_ENTER_TEKTRONIX_MODE:       { printf("TODO: DECSET_ENTER_TEKTRONIX_MODE\n"); } break;       
-//                 case DECSET_132_MODE:                   { printf("TODO: DECSET_132_MODE\n"); } break;                   
-//                 case DECSET_MORE_FIX:                   { printf("TODO: DECSET_MORE_FIX\n"); } break;                   
-//                 case DECSET_ENB_NAT_REPLACE_CHSET:      { printf("TODO: DECSET_ENB_NAT_REPLACE_CHSET\n"); } break;      
-//                 case DECSET_ENB_GRAP_EXP_PRINT_MODE:    { printf("TODO: DECSET_ENB_GRAP_EXP_PRINT_MODE\n"); } break;    
-//                 case DECSET_TURN_ON_MARGIN_BELL:        { printf("TODO: DECSET_TURN_ON_MARGIN_BELL\n"); } break;        
-//                 // case DECSET_ENB_GRAP_PRINT_CLR_MODE:    { printf("TODO: DECSET_ENB_GRAP_PRINT_CLR_MODE\n"); } break;    
-//                 case DECSET_REVERSE_WRAP_MODE:          { printf("TODO: DECSET_REVERSE_WRAP_MODE\n"); } break;          
-//                 // case DECSET_ENB_GRAP_PRINT_CLR_SYNTAX:  { printf("TODO: DECSET_ENB_GRAP_PRINT_CLR_SYNTAX\n"); } break;  
-//                 case DECSET_START_LOGGING:              { printf("TODO: DECSET_START_LOGGING\n"); } break;              
-//                 // case DECSET_GRAP_PRINT_BG_MODE:         { printf("TODO: DECSET_GRAP_PRINT_BG_MODE\n"); } break;         
-//                 case DECSET_USE_ALTERNATE_SCREEN_BUF:   { printf("TODO: DECSET_USE_ALTERNATE_SCREEN_BUF\n"); } break;   
-//                 // case DECSET_ENB_GRAP_ROT_PRINT_MODE:    { printf("TODO: DECSET_ENB_GRAP_ROT_PRINT_MODE\n"); } break;    
-//                 case DECSET_APPLICATION_KEYPAD_MODE:    { printf("TODO: DECSET_APPLICATION_KEYPAD_MODE\n"); } break;    
-//                 case DECSET_BACKARROW_SENDS_BACKSPACE:  { printf("TODO: DECSET_BACKARROW_SENDS_BACKSPACE\n"); } break;  
-//                 case DECSET_LEFT_RIGHT_MARGIN_MODE:     { printf("TODO: DECSET_LEFT_RIGHT_MARGIN_MODE\n"); } break;     
-//                 case DECSET_ENB_SIXEL_DISPLAY_MODE:     { printf("TODO: DECSET_ENB_SIXEL_DISPLAY_MODE\n"); } break;     
-//                 case DECSET_NOTCLEAR_SCREEN_ON_DECCOLM: { printf("TODO: DECSET_NOTCLEAR_SCREEN_ON_DECCOLM\n"); } break; 
-//                 case DECSET_SEND_MOUXY_ON_BUTPRESSRELS: { printf("TODO: DECSET_SEND_MOUXY_ON_BUTPRESSRELS\n"); } break; 
-//                 case DECSET_HILITE_MOUSE_TRACKING:      { printf("TODO: DECSET_HILITE_MOUSE_TRACKING\n"); } break;      
-//                 case DECSET_CELL_MOTION_MOUSE_TRACKING: { printf("TODO: DECSET_CELL_MOTION_MOUSE_TRACKING\n"); } break; 
-//                 case DECSET_ALL_MOTION_MOUSE_TRACKING:  { printf("TODO: DECSET_ALL_MOTION_MOUSE_TRACKING\n"); } break;  
-//                 case DECSET_SEND_FOCUS_INOUT_EVENTS:    { printf("TODO: DECSET_SEND_FOCUS_INOUT_EVENTS\n"); } break;    
-//                 case DECSET_UTF8_MOUSE_MODE:            { printf("TODO: DECSET_UTF8_MOUSE_MODE\n"); } break;            
-//                 case DECSET_SGR_MOUSE_MODE:             { printf("TODO: DECSET_SGR_MOUSE_MODE\n"); } break;             
-//                 case DECSET_ALTERNATE_SCROLL_MODE:      { printf("TODO: DECSET_ALTERNATE_SCROLL_MODE\n"); } break;      
-//                 case DECSET_SCROLL_BOTTOM_TTY_OUTPUT:   { printf("TODO: DECSET_SCROLL_BOTTOM_TTY_OUTPUT\n"); } break;   
-//                 case DECSET_SCROLL_BOTTOM_ON_KEYPRESS:  { printf("TODO: DECSET_SCROLL_BOTTOM_ON_KEYPRESS\n"); } break;  
-//                 case DECSET_ENB_FASTSCROLL:             { printf("TODO: DECSET_ENB_FASTSCROLL\n"); } break;             
-//                 case DECSET_ENB_URXVT_MOUSE_MODE:       { printf("TODO: DECSET_ENB_URXVT_MOUSE_MODE\n"); } break;       
-//                 case DECSET_ENB_SGR_MOUSE_PIXELMODE:    { printf("TODO: DECSET_ENB_SGR_MOUSE_PIXELMODE\n"); } break;    
-//                 case DECSET_INTERPRET_META_KEY:         { printf("TODO: DECSET_INTERPRET_META_KEY\n"); } break;         
-//                 case DECSET_ENB_SPCMOD_ALT_NUMLOCK:     { printf("TODO: DECSET_ENB_SPCMOD_ALT_NUMLOCK\n"); } break;     
-//                 case DECSET_SEND_ESC_WHEN_META_MOD:     { printf("TODO: DECSET_SEND_ESC_WHEN_META_MOD\n"); } break;     
-//                 case DECSET_SEND_DEL_FROM_EDITKEYPAD:   { printf("TODO: DECSET_SEND_DEL_FROM_EDITKEYPAD\n"); } break;   
-//                 case DECSET_SEND_ESC_WHEN_ALT_MOD:      { printf("TODO: DECSET_SEND_ESC_WHEN_ALT_MOD\n"); } break;      
-//                 case DECSET_KEEP_SELEC_NOT_HIGLIG:      { printf("TODO: DECSET_KEEP_SELEC_NOT_HIGLIG\n"); } break;      
-//                 case DECSET_USE_CLIPBOARD_SELECTION:    { printf("TODO: DECSET_USE_CLIPBOARD_SELECTION\n"); } break;    
-//                 case DECSET_ENB_URGWIN_ON_CTRL_G:       { printf("TODO: DECSET_ENB_URGWIN_ON_CTRL_G\n"); } break;       
-//                 case DECSET_ENB_RAISEWIN_ON_CTRL_G:     { printf("TODO: DECSET_ENB_RAISEWIN_ON_CTRL_G\n"); } break;     
-//                 case DECSET_REUSE_MOST_RECENT_CLIPBRD:  { printf("TODO: DECSET_REUSE_MOST_RECENT_CLIPBRD\n"); } break;  
-//                 case DECSET_EXTENDED_REVERSE_WRAP_MODE: { printf("TODO: DECSET_EXTENDED_REVERSE_WRAP_MODE\n"); } break; 
-//                 case DECSET_ENB_SWAP_ALT_SCREEN_BUF:    { printf("TODO: DECSET_ENB_SWAP_ALT_SCREEN_BUF\n"); } break;    
-//                 case DECSET_USE_ALT_SCREEN_BUFFER:      { printf("TODO: DECSET_USE_ALT_SCREEN_BUFFER\n"); } break;      
-//                 case DECSET_SAVE_CURSOR:                { printf("TODO: DECSET_SAVE_CURSOR\n"); } break;                
-//                 case DECSET_SAVE_CURSOR_2:              { printf("TODO: DECSET_SAVE_CURSOR_2\n"); } break;              
-//                 case DECSET_TERMINFOCAP_FNKEY_MODE:     { printf("TODO: DECSET_TERMINFOCAP_FNKEY_MODE\n"); } break;     
-//                 case DECSET_SET_SUN_FUNCKEY_MODE:       { printf("TODO: DECSET_SET_SUN_FUNCKEY_MODE\n"); } break;       
-//                 case DECSET_SET_HP_FUNCKEY_MODE:        { printf("TODO: DECSET_SET_HP_FUNCKEY_MODE\n"); } break;        
-//                 case DECSET_SET_SCO_FUNCKEY_MODE:       { printf("TODO: DECSET_SET_SCO_FUNCKEY_MODE\n"); } break;       
-//                 case DECSET_SET_LEGACY_KEYBOARD_EMUL:   { printf("TODO: DECSET_SET_LEGACY_KEYBOARD_EMUL\n"); } break;   
-//                 case DECSET_SET_VT220_KEYBOARD_EMUL:    { printf("TODO: DECSET_SET_VT220_KEYBOARD_EMUL\n"); } break;    
-//                 case DECSET_SET_READLINE_MOUSEBUT_1:    { printf("TODO: DECSET_SET_READLINE_MOUSEBUT_1\n"); } break;    
-//                 case DECSET_SET_READLINE_MOUSEBUT_2:    { printf("TODO: DECSET_SET_READLINE_MOUSEBUT_2\n"); } break;    
-//                 case DECSET_SET_READLINE_MOUSEBUT_3:    { printf("TODO: DECSET_SET_READLINE_MOUSEBUT_3\n"); } break;    
-//                 case DECSET_SET_BRACKETED_PASTE_MODE:   { printf("TODO: DECSET_PASTER_BRACKETED_MODE\n"); m->bracket_mode = b == 'h'; } break;   
-//                 case DECSET_ENB_READLINE_CHARQUOTE:     { printf("TODO: DECSET_ENB_READLINE_CHARQUOTE\n"); } break;     
-//                 case DECSET_ENB_READLINE_NEWLINE_PASTE: { printf("TODO: DECSET_ENB_READLINE_NEWLINE_PASTE\n"); } break; 
-//                 default: printf("UNKNOWN DECSET OP: %d\n", opt);
-//             }
-//
-//             return;
-//         }
-//
-//
-//         case SAVE_CURSOR: {
-//             sv_chop_left(bytes);
-//             m->saved_cursor = m->cursor;
-//             return;
-//         }
-//
-//         case RESTORE_CURSOR: {
-//             sv_chop_left(bytes);
-//             m->cursor = m->saved_cursor;
-//             return;
-//         }
-//     }
-//
-//     int argv[10] = {-1};
-//     int argc     = 0;
-//     minal_parse_ansi_args(m, bytes, &argc, argv);
-//
-//     b = sv_chop_left(bytes);
-//     switch (b) {
-//
-//         case CURSOR_UP: {
-//             int opt = argc > 0 ? argv[0] : 1;
-//
-//             size_t new_row;
-//
-//             if (m->cursor.row < opt || m->cursor.row - opt <= m->reg_top) {
-//                 new_row = m->reg_top;
-//             } else {
-//                 new_row = m->cursor.row - opt;
-//             }
-//             minal_cursor_move(m, m->cursor.col, new_row);
-//         }; break;
-//
-//         case CURSOR_DOWN: {
-//             int opt = argc > 0 ? argv[0] : 1;
-//             size_t new_row;
-//             if (m->cursor.row + opt >= m->reg_bot) {
-//                 new_row = m->reg_bot - 1;
-//             } else {
-//                 new_row = m->cursor.row + opt;
-//             }
-//             minal_cursor_move(m, m->cursor.col, new_row);
-//         }; break;
-//
-//         case CURSOR_FORWARD: {
-//             int opt = argc > 0 ? argv[0] : 1;
-//
-//             size_t new_col;
-//             if (m->cursor.col + opt >= m->config.n_cols) {
-//                 new_col = m->config.n_cols - 1;
-//             } else {
-//                 new_col = m->cursor.col + opt;
-//             }
-//             minal_cursor_move(m, new_col, m->cursor.row);
-//         }; break;
-//
-//         case CURSOR_BACK: {
-//             int opt = argc > 0 ? argv[0] : 1;
-//
-//             size_t new_col;
-//             if (m->cursor.col < opt) {
-//                 new_col = 0;
-//             } else {
-//                 new_col = m->cursor.col - opt;
-//             }
-//             minal_cursor_move(m, new_col, m->cursor.row);
-//         }; break;
-//
-//         case CURSOR_POSITION: {
-//             int opt1 = argc > 0 ? argv[0] : 1;
-//             int opt2 = argc > 1 ? argv[1] : 1;
-//
-//             size_t new_col = MIN(MAX(0, opt1 - 1), m->config.n_cols - 1);
-//             size_t new_row = MIN(MAX(0, opt2 - 1), m->config.n_rows - 1);
-//             minal_cursor_move(m, new_col, new_row);
-//         }; break;
-//
-//         case ERASE_IN_DISPLAY: {
-//             size_t opt = argc > 0 ? argv[0] : 0;
-//             minal_erase_in_display(m, opt);
-//         }; break;
-//
-//         case ERASE_IN_LINE: {
-//             size_t opt = argc > 0 ? argv[0] : 0;
-//             minal_erase_in_line(m, opt);
-//         }; break;
-//
-//         case INSERT_LINES: {
-// 			printf("TODO: CSI %c\n", INSERT_LINES);
-// 		}; break;
-//
-//         case DELETE_LINES: {
-// 			printf("TODO: CSI %c\n", DELETE_LINES);
-// 		}; break;
-//
-//         case DELETE_CHARS: {
-// 			printf("TODO: CSI %c\n", DELETE_CHARS);
-// 		}; break;
-//
-//         case SCROLL_UP: {
-//             size_t opt = argc > 0 ? argv[0] : 1;
-//             minal_pageup(m, opt);
-//         }; break;
-//
-//         case SCROLL_DOWN: {
-//             size_t opt = argc > 0 ? argv[0] : 1;
-//             minal_pagedown(m, opt);
-//         }; break;
-//
-//         case ERASE_CHARS: {
-// 			printf("TODO: CSI %c\n", ERASE_CHARS);
-// 		}; break;
-//
-//         case BACKWARD_TAB: {
-// 			printf("TODO: CSI %c\n", BACKWARD_TAB);
-// 		}; break;
-//
-//         case SCROLL_DOWN_2: {
-// 			printf("TODO: CSI %c\n", SCROLL_DOWN_2);
-// 		}; break;
-//
-//         case CHAR_POSITION_ABSOLUTE: {
-// 			printf("TODO: CSI %c\n", CHAR_POSITION_ABSOLUTE);
-// 		}; break;
-//
-//         case CHAR_POSITION_RELATIVE: {
-// 			printf("TODO: CSI %c\n", CHAR_POSITION_RELATIVE);
-// 		}; break;
-//
-//         case REPEAT_PRECED_GRAPHIC_CHAR: {
-// 			printf("TODO: CSI %c\n", REPEAT_PRECED_GRAPHIC_CHAR);
-// 		}; break;
-//
-//         case DEVICE_ATTRIBUTES_REPORT: {
-// 			printf("TODO: CSI %c\n", DEVICE_ATTRIBUTES_REPORT);
-// 		}; break;
-//
-//         case LINE_POSITION_ABSOLUTE: {
-// 			printf("TODO: CSI %c\n", LINE_POSITION_ABSOLUTE);
-// 		}; break;
-//
-//         case LINE_POSITION_RELATIVE: {
-// 			printf("TODO: CSI %c\n", LINE_POSITION_RELATIVE);
-// 		}; break;
-//
-//         case HORIZONTAL_VERTICAL_POSITION: {
-// 			printf("TODO: CSI %c\n", HORIZONTAL_VERTICAL_POSITION);
-// 		}; break;
-//
-//         case TAB_CLEAR: {
-// 			printf("TODO: CSI %c\n", TAB_CLEAR);
-// 		}; break;
-//
-//         case SET_MODE: {
-// 			printf("TODO: CSI %c\n", SET_MODE);
-// 		}; break;
-//         case MEDIA_COPY: {
-// 			printf("TODO: CSI %c\n", MEDIA_COPY);
-// 		}; break;
-//         case RESET_MODE: {
-// 			printf("TODO: CSI %c\n", RESET_MODE);
-// 		}; break;
-//
-//         case SELECT_GRAPHIC_RENDITION: {
-//             minal_graphic_mode(m, argv, argc);
-//         }; break;
-//
-//         case DEVICE_STATUS_REPORT: {
-//             if (argc < 1 && !(argv[0] == DSR_STATUS || argv[0] == DSR_CURSOR_POSITION)) {
-//                 printf("INVALID CSI ESCAPE SEQUENCE\n");
-//                 return;
-//             }
-//             if (argv[0] == DSR_STATUS) {
-//                 minal_write_str(m, "\x1B[0n");
-//             }
-//
-//             // report cursor position as ESC[row;colR
-//             char str[50];
-//             sprintf(str, "\x1B[%zu;%zuR", m->cursor.row + 1, m->cursor.col + 1);
-//             minal_write_str(m, str);
-//         }; break;
-//
-//         case DEC_SCROLL_TOPBOT_MARGIN: { 
-//             size_t top = argc > 0 ? argv[0] - 1 : 0;
-//             size_t bot = argc > 1 ? argv[1] - 1 : m->config.n_rows - 1;
-//
-//             top = MAX(0, top);
-//             bot = MIN(m->config.n_rows - 1, bot);
-//
-//             if (top > bot) {
-//                 top = 0;
-//                 bot = m->config.n_rows - 1;
-//             }
-//
-//             m->reg_top = top;
-//             m->reg_bot = bot;
-//             minal_cursor_move(m, 0, 0);
-//             minal_erase_in_display(m, 2);
-//         }; break;
-//
-//         case DEC_SCROLL_LEFRIG_MARGIN: { 
-//             printf("TODO: CSI: DEC_SCROLL_LEFRIG_MARGIN\n"); 
-//         }; break;
-//
-//         default: {
-//             // __asm__("int3");
-//             printf("UNKNOW CSI ESCAPE SEQUENCE\n");
-//             printf("    OP: %c\n", b);
-//             if (argc > 0) {
-//                 printf("    ARGS: ");
-//                 for (int i = 0; i < argc; ++i) {
-//                     printf("%d, ", argv[i]);
-//                 }
-//                 printf("\n");
-//             }
-//         }; break;
-//     }
-//     // printf(" CSI: BEFORE END: 0b%08b - 0x%02X (%c)\n", b, b, b);
-//     return;
-// }
-//
-// void minal_parse_ansi(Minal* m, StringView* bytes)
-// {
-//     uint8_t b = sv_chop_left(bytes);
-//     switch (b) {
-//
-//         case DEC_SAVE_CURSOR: {
-//             sv_chop_left(bytes);
-//             m->saved_cursor = m->cursor;
-//             return;
-//         }
-//
-//         case DEC_RESTORE_CURSOR: {
-//             sv_chop_left(bytes);
-//             m->cursor = m->saved_cursor;
-//             return;
-//         }
-//
-//         case INDEX: {
-//             printf("TODO: C1 CODE: INDEX\n");
-//             return;
-//         }
-//
-//         case REVERSE_INDEX: {
-//             printf("TODO: C1 CODE: REVERSE_INDEX\n");
-//             return;
-//         }
-//
-//         case FULL_RESET: {
-//             printf("TODO: C1 CODE: FULL_RESET\n");
-//             return;
-//         }
-//
-//         case DEC_KEYPAD_APPLICATION_MODE: {
-//             printf("TODO: KEYPAD_APPLICATION_MODE\n");
-//             m->keypad_mode = KEYPAD_APPLICATION_MODE;
-//             return;
-//         }
-//
-//         case DEC_KEYPAD_NORMAL_MODE: {
-//             printf("TODO: KEYPAD_NORMAL_MODE\n");
-//             m->keypad_mode = KEYPAD_NORMAL_MODE;
-//             return;
-//         }
-//
-//         case DEVICE_CONTROL_STRING: {
-//             printf("TODO: DEVICE_CONTROL_STRING\n");
-//             while(sv_chop_left(bytes) != ESC && sv_first(bytes) != STRING_TERMINATOR);
-//             sv_chop_left(bytes);
-//             return;
-//         }
-//
-//         case CONTROL_SEQUENCE_INTRODUCER: {
-//             minal_parse_ansi_csi(m, bytes);
-//             return;
-//         }
-//
-//         case STRING_TERMINATOR: {
-//             printf("ERROR: ISOLATED STRING_TERMINATOR\n");
-//         }; break;
-//
-//         case OPERATING_SYSTEM_COMMAND: {
-//             minal_parse_ansi_osc(m, bytes);
-// 		}; break;
-//
-//         case PRIVACY_MESSAGE: {
-//             printf("TODO: PRIVACY_MESSAGE\n");
-// 		}; break;
-//
-//         case APPLICATION_PROGRAM_COMMAND: {
-//             printf("TODO: APPLICATION_PROGRAM_COMMAND\n");
-// 		}; break;
-//
-//         default: printf("UNKNOWN C1 CODE ESCAPE SEQUENCE: 0b%08b | 0x%02X (%c)\n", b, b, b);
-//      }
-// }
+static bool ansi_append_invalid(ANSI_Cmd* cmd, const char* data, size_t len) {
+  ANSI_Location loc = { .data = data, .len = len };
+  if(cmd->invalid.cap == 0 || cmd->invalid.items == NULL) {
+    cmd->invalid.cap = 16;
+    cmd->invalid.len = 0;
+    cmd->invalid.items = realloc(NULL, sizeof(cmd->invalid.items[0]) * cmd->invalid.cap);
+  }
+  else if(cmd->invalid.len+1>=cmd->invalid.cap) {
+    cmd->invalid.cap *= 2;
+    cmd->invalid.items = realloc(cmd->invalid.items, sizeof(cmd->invalid.items[0]) * cmd->invalid.cap);
+  }
+
+  if(cmd->invalid.items) {
+    cmd->invalid.items[cmd->invalid.len++] = loc;
+  }
+
+  return cmd->invalid.items;
+}
+
+static bool ansi_decode_action(ANSI_Cmd* cmd, const char* params, size_t param_len, char final) {
+
+  ansi_parse_int_list(params, param_len, &cmd->_args, 0);
+  int n = (cmd->_args.len > 0) ? cmd->_args.items[0] : 0;
+
+  switch(final) {
+    case 'J': // ED - Erase in Display
+      cmd->action.clear_screen = true;
+      if(n >= 0 && n <= 3) cmd->action.clear_screen_mode = (ANSI_EraseMode)n;
+      else cmd->action.clear_screen_mode = ANSI_Erase_ToEnd;
+      break;
+
+    case 'K': // EL - Erase in Line
+      cmd->action.clear_line = true;
+      if(n >= 0 && n <= 2) cmd->action.clear_line_mode = (ANSI_EraseMode)n;
+      else cmd->action.clear_line_mode = ANSI_Erase_ToEnd;
+      break;
+
+    case 'S': // SU - Scroll Up
+      cmd->action.scroll = (n > 0) ? n : 1;
+      break;
+
+    case 'T': // SD - Scroll Down
+      cmd->action.scroll = -(n > 0 ? n : 1);
+      break;
+
+    case 's': // Save cursor (ANSI)
+      cmd->action.save_restore_index = n;
+      cmd->action.save_restore_cursor = ANSI_State_Set;
+      break;
+
+    case 'u': // Restore cursor (ANSI)
+      cmd->action.save_restore_index = n;
+      cmd->action.save_restore_cursor = ANSI_State_Reset;
+      break;
+
+    default:
+      return ansi_append_invalid(cmd,params - 1, param_len + 2); // Include final char
+  }
+
+  return cmd;
+}
+
+static bool ansi_decode_dec_private(ANSI_Cmd* cmd, const char* params, size_t params_len, bool enabled) {
+  // Parse parameter number and call ansi_split_args to handle multiple params
+  ansi_split_args(params - 1, params_len + 1, NULL, 0); // Reset state
+
+  ANSI_Feature_Cmd* feat = &cmd->feature;
+
+  const char* arg;
+  size_t arg_len;
+  while(ansi_split_args(params, params_len, &arg, &arg_len)) {
+      int mode = ansi_str_to_int(arg, arg_len, 0);
+      switch(mode) {
+        case 1:    feat->cursor_keys                        = enabled ? ANSI_State_Set : ANSI_State_Reset; break;
+        case 2:    feat->us_ascii_vt100                     = enabled ? ANSI_State_Set : ANSI_State_Reset; break;
+        case 3:    feat->enable_cols132                     = enabled ? ANSI_State_Set : ANSI_State_Reset; break;
+        case 4:    feat->smooth_scroll                      = enabled ? ANSI_State_Set : ANSI_State_Reset; break;
+        case 5:    feat->reverse_video                      = enabled ? ANSI_State_Set : ANSI_State_Reset; break;
+        case 6:    feat->cursor_relative                    = enabled ? ANSI_State_Set : ANSI_State_Reset; break;
+        case 7:    feat->wraparround_mode                   = enabled ? ANSI_State_Set : ANSI_State_Reset; break;
+        case 8:    feat->autorepeat_keys                    = enabled ? ANSI_State_Set : ANSI_State_Reset; break;
+        case 9:    feat->mouse_tracking_on_press            = enabled ? ANSI_State_Set : ANSI_State_Reset; break;
+        case 25:   feat->show_cursor                        = enabled ? ANSI_State_Set : ANSI_State_Reset; break;
+        case 47:   feat->enable_alt_screen0                 = enabled ? ANSI_State_Set : ANSI_State_Reset; break;
+        case 66:   feat->enable_keypad                      = enabled ? ANSI_State_Set : ANSI_State_Reset; break;
+        case 67:   feat->enable_backarrow_as_backspace      = enabled ? ANSI_State_Set : ANSI_State_Reset; break;
+        case 69:   feat->enable_margin_mode                 = enabled ? ANSI_State_Set : ANSI_State_Reset; break;
+        case 1000: feat->mouse_tracking_on_pess_and_release = enabled ? ANSI_State_Set : ANSI_State_Reset; break;
+        case 1001: feat->mouse_tracking_hilite              = enabled ? ANSI_State_Set : ANSI_State_Reset; break;
+        case 1002: feat->mouse_tracking_cell_motion         = enabled ? ANSI_State_Set : ANSI_State_Reset; break;
+        case 1003: feat->mouse_tracking_all_motion          = enabled ? ANSI_State_Set : ANSI_State_Reset; break;
+        case 1004: feat->enable_focus_events                = enabled ? ANSI_State_Set : ANSI_State_Reset; break;
+        case 1005: feat->enable_utf8_mouse_mode             = enabled ? ANSI_State_Set : ANSI_State_Reset; break;
+        case 1006: feat->enable_SRG_mouse_mode              = enabled ? ANSI_State_Set : ANSI_State_Reset; break;
+        case 1007: feat->enable_alt_scroll_mode             = enabled ? ANSI_State_Set : ANSI_State_Reset; break;
+        case 1047: feat->enable_alt_screen1                 = enabled ? ANSI_State_Set : ANSI_State_Reset; break;
+        case 1048: feat->save_cursor                        = enabled ? ANSI_State_Set : ANSI_State_Reset; break;
+        case 1049: feat->enable_alt_scree_and_save_cursor   = enabled ? ANSI_State_Set : ANSI_State_Reset; break;
+        case 2004: feat->enable_bracketed_paste_mode        = enabled ? ANSI_State_Set : ANSI_State_Reset; break;
+        default: {
+          return ansi_append_invalid(cmd, params, params_len);
+        } break;
+      }
+  }
+  
+  return true;
+}
+
+static bool ansi_decode_csi(ANSI_Cmd* cmd, const char* data, size_t len) {
+  // CSI format: ESC [ Pm... final (len is already exact)
+  // if(len < 2 || data[0] != '[') return ansi_append_invalid(cmd,data, len);
+
+  const char* params = data + 2;  // Skip ESC[
+  size_t params_len = len - 2;
+  char final = data[len - 1];
+
+  // Check for DEC private mode prefix (?) and handle h/l inside
+  if(params_len > 0 && params[0] == '?' ) {
+    params++;
+
+    if(final == 'h' && final == 'l') { // enable/disable private flags
+      return ansi_append_invalid(cmd, data,len);
+    } else if (final == 'n') { //TODO: prviate device status report
+      return ansi_append_invalid(cmd, data,len);
+    }
+
+    return ansi_decode_dec_private(cmd, params, params_len, final == 'h');
+  }
+
+  if(strchr("JKSTsu", final)) {
+    return ansi_decode_action(cmd, params, params_len + 1, final);
+  }
+
+  switch(final) {
+    // Cursor movement - relative (CUU/CUD/CUF/CUB)
+    case 'A': /*Cursor Up*/ case 'B': /*Cursor Down*/case 'C': /*Cursor Forward*/ case 'D': /*Cursor Back*/ {
+      int n = ansi_str_to_int(params, params_len, 1);
+      return ansi_append_invalid(cmd, data, len);
+    };
+
+    // Cursor movement - absolute line position
+    case 'd': {
+      int n = ansi_str_to_int(params, params_len, 1);
+      cmd->cursor.move_absolute = 1;
+      cmd->cursor.absolute_motion.row = (n > 0) ? n : 1;
+      return cmd;
+    }
+
+    // Cursor movement - relative line position
+    case 'e': {
+      int n = ansi_str_to_int(params, params_len, 1);
+      cmd->cursor.move_relative = 1;
+      cmd->cursor.relative_motion.row = n;
+      return cmd;
+    }
+
+    // Style (SGR) //TODO: parse ansi styles
+    case 'm': return ansi_append_invalid(cmd, data, len);
+    // Cursor position (CUP/HVP)
+    case 'H': case 'f': return ansi_append_invalid(cmd, data, len);
+    // Mode set/reset (DECSET/DECRST)
+    case 'h': case 'l': return ansi_append_invalid(cmd, data, len);
+    // Scroll region
+    case 'r': return ansi_append_invalid(cmd, data, len);
+    // Device status report (DSR)
+    case 'n': return ansi_append_invalid(cmd, data, len);
+    case 'c': return ansi_append_invalid(cmd, data, len);
+    default : return ansi_append_invalid(cmd, data, len);
+  }
+}
+
+bool ansi_decode_cmd(ANSI_Cmd* cmd,const char* data, size_t len) {
+
+  if(len == 0) return ansi_append_invalid(cmd, data, len);
+  if(data[0] != ESC) return ansi_append_invalid(cmd, data, len);
+
+  // Detect control type and exact length
+  C1_Control ctrl;
+  size_t cmd_len;
+  if(!ansi_find_cmd_end(data, len, &cmd_len, &ctrl)) {
+      return ansi_append_invalid(cmd,data, len);
+  }
+
+  // Dispatch based on C1_Control type
+  switch(ctrl) {
+      case C1_Control_CSI: return ansi_decode_csi(cmd, data, cmd_len);
+      case C1_Control_OSC: {
+          return ansi_append_invalid(cmd,data,len);
+      }
+
+      case C1_Control_ST: {
+          return ansi_append_invalid(cmd,data,len);
+      }
+
+      // Simple 2-byte controls
+      case C1_Control_IND:
+      case C1_Control_NEL:
+      case C1_Control_RI:
+      case C1_Control_SS2:
+      case C1_Control_SS3:
+      case C1_Control_DCS:
+      case C1_Control_SPA:
+      case C1_Control_EPA:
+      case C1_Control_SOS:
+      case C1_Control_RTI:
+      case C1_Control_APC: {
+      }
+
+      // Special VT100 sequences
+      case C1_Control_Special_DECSC: {
+      }
+
+      case C1_Control_Special_DECRC: {
+      }
+
+      case C1_Control_Special_RIS: {
+      }
+
+      case C1_Control_Special_ML: {
+      }
+
+      case C1_Control_Special_MU: {
+      }
+
+      // Character set designation
+      case C1_Control_VT100_G0:
+      case C1_Control_VT100_G1:
+      case C1_Control_VT100_G2:
+      case C1_Control_VT100_G3: {
+      }
+
+      // Other VT100 special sequences
+      case C1_Control_Special_DECPAM:
+      case C1_Control_Special_DECPNM:
+      case C1_Control_Special_CTLLCS:
+      case C1_Control_Special_LS2:
+      case C1_Control_Special_LS3:
+      case C1_Control_Special_LS3R:
+      case C1_Control_Special_LS2R:
+      case C1_Control_Special_LS1R:
+      case C1_Control_VT100_SP:
+      case C1_Control_VT100_DEC:
+      case C1_Control_VT100_SEL: {
+      }
+
+      default:
+          return ansi_append_invalid(cmd, data, cmd_len);
+  }
+}
