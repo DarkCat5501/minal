@@ -114,31 +114,58 @@ typedef enum {
   ControlCmd_Feature // DECSET/DECRST modes
 } ControlCmd;
 
+// Standard 16-color palette (ANSI colors)
+static const uint8_t ANSI_ColorPalette[16][3] = {
+  [0] = { 0x00, 0x00, 0x00 }, // black
+  [1] = { 0xCD, 0x00, 0x00 }, // red
+  [2] = { 0x00, 0xCD, 0x00 }, // green
+  [3] = { 0xCD, 0xCD, 0x00 }, // yellow
+  [4] = { 0x00, 0x00, 0xCD }, // blue
+  [5] = { 0xCD, 0x00, 0xCD }, // magenta
+  [6] = { 0x00, 0xCD, 0xCD }, // cyan
+  [7] = { 0xCD, 0xCD, 0xCD }, // white/bright black (30-37)
+  [8] = { 0x7F, 0x7F, 0x7F }, // bright black
+  [9] = { 0xFF, 0x00, 0x00 }, // bright red
+  [10] = { 0x00, 0xFF, 0x00 }, // bright green
+  [11] = { 0xFF, 0xFF, 0x00 }, // bright yellow
+  [12] = { 0x00, 0x00, 0xFF }, // bright blue
+  [13] = { 0xFF, 0x00, 0xFF }, // bright magenta
+  [14] = { 0x00, 0xFF, 0xFF }, // bright cyan
+  [15] = { 0xFF, 0xFF, 0xFF }, // bright white
+};
+
+// Default foreground/background colors
+static const uint8_t ANSI_DefaultFg[3] = { 0xCD, 0xCD, 0xCD };
+static const uint8_t ANSI_DefaultBg[3] = { 0x00, 0x00, 0x00 };
+
+typedef struct {
+  uint8_t r,g,b; 
+} ANSI_Color;
 
 typedef struct {
   uint8_t reset :1; // if set: should reset all the states to default before applying any other change
   
   /* Font tyles */
-  uint8_t bold  :2; // toogles bold state 
-  uint8_t italic:2; // toogles italic state 
+  uint8_t bold  :2; 
+  uint8_t italic:2; 
 
   /* text decorations */
-  uint8_t underline    :2; // if set: underline; if alt set: double underline
-  uint8_t overline     :2; // toogle overline state (may or maynot be suported)
-  uint8_t strikethrough:2; // if set 
+  uint8_t underline    :2;
+  uint8_t overline     :2;
+  uint8_t strikethrough:2; 
 
-  uint8_t faint    :2; // sets or resets the faint state: should reduce the brightness of fg_color by 50%
-  uint8_t blink    :2; // if set: blink; if alt set: rapid blinking
-  uint8_t inverse  :2; // sets of resets the inverse state: should invert fg and bg colors
-  uint8_t invisible:2; // sets of resets the invisible state
+  uint8_t faint    :2;
+  uint8_t blink    :2;
+  uint8_t inverse  :2;
+  uint8_t invisible:2;
 
-  uint8_t fg_change:2; // sets or resets the foreground color: fg_color is the new color, if reset use your defaults
-  uint8_t bg_change:2; // sets or resets the background color: bg_color is the new color, if reset use your defaults
-  uint8_t ul_change:2; // sets or resets the underline  color: ul_color is the new color, if reset use your defaults
-  
-  struct { uint8_t r,g,b; } fg_color;
-  struct { uint8_t r,g,b; } bg_color;
-  struct { uint8_t r,g,b; } ul_color;
+  uint8_t fg_change:2;
+  uint8_t bg_change:2;
+  uint8_t ul_change:2; 
+   
+  ANSI_Color fg_color;
+  ANSI_Color bg_color;
+  ANSI_Color ul_color;
 } ANSI_Style_Cmd;
 
 
@@ -306,6 +333,12 @@ typedef struct {
   size_t len, cap;
 } ANSI_Invalid_Cmd;
 
+// Int list for parsing N0;N1;N2 style strings
+typedef struct {
+  int* items;
+  size_t len, cap;
+} ANSI_IntList;
+
 // Main tagged union for decoded commands
 typedef struct {
   ANSI_Invalid_Cmd invalid;
@@ -321,11 +354,8 @@ typedef struct {
 
 // Decode escape sequence into typed command
 bool ansi_decode_cmd(ANSI_Cmd* cmd, const char* data, size_t len);
-
-// Int list for parsing N0;N1;N2 style strings
-typedef struct {
-  int* items;
-  size_t len, cap;
-} ANSI_IntList;
+void ansi_debug_cmd(const ANSI_Cmd* cmd);
 
 bool ansi_parse_int_list(const char* data, size_t len, ANSI_IntList* out, int def);
+
+bool ansi_split_args(const char* data, size_t len, const char** out_arg, size_t* out_len);

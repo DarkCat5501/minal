@@ -121,7 +121,7 @@ invalid:
 static VT100_CharSet ansi_match_vt100_charset(const char* data, size_t len) {
   if(len < 2) goto invalid;
 
-  for(int i=0;i<VT100_CharSet__InputMap;i++) {
+  for(int i=0;i<VT100_CharSet__Length;i++) {
   if(strncmp(VT100_CharSet__InputMap[i],data,2)==0) return (VT100_CharSet)i;
   }
 invalid:
@@ -143,11 +143,12 @@ void ansi_debug(const char* data, size_t len) {
 }
 
 bool ansi_find_cmd_end(const char* data, size_t len, size_t* out_len, C1_Control* out_ctrl) {
-
   if(data[0]!= ESC) return false;
 
   C1_Control ctr = ansi_match_c1_controls(data,len);
+  if(out_ctrl) * out_ctrl = ctr;
   if(ctr == C1_Control_Invalid) return false;
+
   else if(ctr >= C1_Control_Special_Start && ctr <= C1_Control_Special_Max) {
   if(out_len) *out_len = strlen(C1_Control__InputMap[ctr]);
   return true;
@@ -253,20 +254,22 @@ bool ansi_parse_int_list(const char* data, size_t len, ANSI_IntList* out, int de
   int current = 0;
   bool has_digit = false;
   
-  for(size_t i = 0; i <= len; i++) {
-    char ch = (i < len) ? data[i] : ';'; // Treat end as separator
+  for(size_t i = 0; i < len; i++) {
+    char ch = data[i];
     
     if(ch >= '0' && ch <= '9') {
       current = current * 10 + (ch - '0');
       has_digit = true;
     } else if(ch == ';' || ch == ':') {
       // Separator - add current value
-      if(out->len + 1 > out->cap && !ansi_int_list_grow(out)) return false;
-      out->items[out->len++] = has_digit ? current : def;
+      if(has_digit) {
+        if(out->len + 1 > out->cap && !ansi_int_list_grow(out)) return false;
+        out->items[out->len++] = current;
+      }
       current = 0;
       has_digit = false;
     } else {
-      // Non-digit, non-separator - treat as separator with default
+      // Non-digit, non-separator - end of number, add current if exists
       if(has_digit) {
         if(out->len + 1 > out->cap && !ansi_int_list_grow(out)) return false;
         out->items[out->len++] = current;
@@ -274,6 +277,12 @@ bool ansi_parse_int_list(const char* data, size_t len, ANSI_IntList* out, int de
       current = 0;
       has_digit = false;
     }
+  }
+  
+  // Add final number if exists (without trailing separator)
+  if(has_digit) {
+    if(out->len + 1 > out->cap && !ansi_int_list_grow(out)) return false;
+    out->items[out->len++] = current;
   }
   
   return true;
@@ -346,54 +355,276 @@ static bool ansi_decode_action(ANSI_Cmd* cmd, const char* params, size_t param_l
 }
 
 static bool ansi_decode_dec_private(ANSI_Cmd* cmd, const char* params, size_t params_len, bool enabled) {
-  // Parse parameter number and call ansi_split_args to handle multiple params
-  ansi_split_args(params - 1, params_len + 1, NULL, 0); // Reset state
-
   ANSI_Feature_Cmd* feat = &cmd->feature;
 
-  const char* arg;
-  size_t arg_len;
-  while(ansi_split_args(params, params_len, &arg, &arg_len)) {
-      int mode = ansi_str_to_int(arg, arg_len, 0);
-      switch(mode) {
-        case 1:    feat->cursor_keys                        = enabled ? ANSI_State_Set : ANSI_State_Reset; break;
-        case 2:    feat->us_ascii_vt100                     = enabled ? ANSI_State_Set : ANSI_State_Reset; break;
-        case 3:    feat->enable_cols132                     = enabled ? ANSI_State_Set : ANSI_State_Reset; break;
-        case 4:    feat->smooth_scroll                      = enabled ? ANSI_State_Set : ANSI_State_Reset; break;
-        case 5:    feat->reverse_video                      = enabled ? ANSI_State_Set : ANSI_State_Reset; break;
-        case 6:    feat->cursor_relative                    = enabled ? ANSI_State_Set : ANSI_State_Reset; break;
-        case 7:    feat->wraparround_mode                   = enabled ? ANSI_State_Set : ANSI_State_Reset; break;
-        case 8:    feat->autorepeat_keys                    = enabled ? ANSI_State_Set : ANSI_State_Reset; break;
-        case 9:    feat->mouse_tracking_on_press            = enabled ? ANSI_State_Set : ANSI_State_Reset; break;
-        case 25:   feat->show_cursor                        = enabled ? ANSI_State_Set : ANSI_State_Reset; break;
-        case 47:   feat->enable_alt_screen0                 = enabled ? ANSI_State_Set : ANSI_State_Reset; break;
-        case 66:   feat->enable_keypad                      = enabled ? ANSI_State_Set : ANSI_State_Reset; break;
-        case 67:   feat->enable_backarrow_as_backspace      = enabled ? ANSI_State_Set : ANSI_State_Reset; break;
-        case 69:   feat->enable_margin_mode                 = enabled ? ANSI_State_Set : ANSI_State_Reset; break;
-        case 1000: feat->mouse_tracking_on_pess_and_release = enabled ? ANSI_State_Set : ANSI_State_Reset; break;
-        case 1001: feat->mouse_tracking_hilite              = enabled ? ANSI_State_Set : ANSI_State_Reset; break;
-        case 1002: feat->mouse_tracking_cell_motion         = enabled ? ANSI_State_Set : ANSI_State_Reset; break;
-        case 1003: feat->mouse_tracking_all_motion          = enabled ? ANSI_State_Set : ANSI_State_Reset; break;
-        case 1004: feat->enable_focus_events                = enabled ? ANSI_State_Set : ANSI_State_Reset; break;
-        case 1005: feat->enable_utf8_mouse_mode             = enabled ? ANSI_State_Set : ANSI_State_Reset; break;
-        case 1006: feat->enable_SRG_mouse_mode              = enabled ? ANSI_State_Set : ANSI_State_Reset; break;
-        case 1007: feat->enable_alt_scroll_mode             = enabled ? ANSI_State_Set : ANSI_State_Reset; break;
-        case 1047: feat->enable_alt_screen1                 = enabled ? ANSI_State_Set : ANSI_State_Reset; break;
-        case 1048: feat->save_cursor                        = enabled ? ANSI_State_Set : ANSI_State_Reset; break;
-        case 1049: feat->enable_alt_scree_and_save_cursor   = enabled ? ANSI_State_Set : ANSI_State_Reset; break;
-        case 2004: feat->enable_bracketed_paste_mode        = enabled ? ANSI_State_Set : ANSI_State_Reset; break;
-        default: {
-          return ansi_append_invalid(cmd, params, params_len);
-        } break;
+  ANSI_IntList args = {0};
+  if(!ansi_parse_int_list(params, params_len, &args, 0)) return false;
+
+  for(size_t i = 0; i < args.len; i++) {
+    int mode = args.items[i];
+    switch(mode) {
+      case 1:    feat->cursor_keys                        = enabled ? ANSI_State_Set : ANSI_State_Reset; break;
+      case 2:    feat->us_ascii_vt100                     = enabled ? ANSI_State_Set : ANSI_State_Reset; break;
+      case 3:    feat->enable_cols132                     = enabled ? ANSI_State_Set : ANSI_State_Reset; break;
+      case 4:    feat->smooth_scroll                      = enabled ? ANSI_State_Set : ANSI_State_Reset; break;
+      case 5:    feat->reverse_video                      = enabled ? ANSI_State_Set : ANSI_State_Reset; break;
+      case 6:    feat->cursor_relative                    = enabled ? ANSI_State_Set : ANSI_State_Reset; break;
+      case 7:    feat->wraparround_mode                   = enabled ? ANSI_State_Set : ANSI_State_Reset; break;
+      case 8:    feat->autorepeat_keys                    = enabled ? ANSI_State_Set : ANSI_State_Reset; break;
+      case 9:    feat->mouse_tracking_on_press            = enabled ? ANSI_State_Set : ANSI_State_Reset; break;
+      case 25:   feat->show_cursor                        = enabled ? ANSI_State_Set : ANSI_State_Reset; break;
+      case 47:   feat->enable_alt_screen0                 = enabled ? ANSI_State_Set : ANSI_State_Reset; break;
+      case 66:   feat->enable_keypad                      = enabled ? ANSI_State_Set : ANSI_State_Reset; break;
+      case 67:   feat->enable_backarrow_as_backspace      = enabled ? ANSI_State_Set : ANSI_State_Reset; break;
+      case 69:   feat->enable_margin_mode                 = enabled ? ANSI_State_Set : ANSI_State_Reset; break;
+      case 1000: feat->mouse_tracking_on_pess_and_release = enabled ? ANSI_State_Set : ANSI_State_Reset; break;
+      case 1001: feat->mouse_tracking_hilite              = enabled ? ANSI_State_Set : ANSI_State_Reset; break;
+      case 1002: feat->mouse_tracking_cell_motion         = enabled ? ANSI_State_Set : ANSI_State_Reset; break;
+      case 1003: feat->mouse_tracking_all_motion          = enabled ? ANSI_State_Set : ANSI_State_Reset; break;
+      case 1004: feat->enable_focus_events                = enabled ? ANSI_State_Set : ANSI_State_Reset; break;
+      case 1005: feat->enable_utf8_mouse_mode             = enabled ? ANSI_State_Set : ANSI_State_Reset; break;
+      case 1006: feat->enable_SRG_mouse_mode              = enabled ? ANSI_State_Set : ANSI_State_Reset; break;
+      case 1007: feat->enable_alt_scroll_mode             = enabled ? ANSI_State_Set : ANSI_State_Reset; break;
+      case 1047: feat->enable_alt_screen1                 = enabled ? ANSI_State_Set : ANSI_State_Reset; break;
+      case 1048: feat->save_cursor                        = enabled ? ANSI_State_Set : ANSI_State_Reset; break;
+      case 1049: feat->enable_alt_scree_and_save_cursor   = enabled ? ANSI_State_Set : ANSI_State_Reset; break;
+      case 2004: feat->enable_bracketed_paste_mode        = enabled ? ANSI_State_Set : ANSI_State_Reset; break;
+      default: {
+        free(args.items);
+        return ansi_append_invalid(cmd, params, params_len);
       }
+    }
+  }
+   
+  free(args.items);
+  return true;
+}
+
+static bool ansi_parser_sgr(ANSI_Cmd* cmd, const char* params, size_t params_len) {
+  ANSI_Style_Cmd* style = &cmd->style;
+  
+  ANSI_IntList args = {0};
+  if(!ansi_parse_int_list(params, params_len, &args, 0)) return false;
+  
+  if(args.len == 0) {
+    style->reset = 1;
+    return true;
   }
   
+  for(size_t i = 0; i < args.len; i++) {
+    int code = args.items[i];
+    
+    // Reset
+    if(code == 0) {
+      style->reset = 1;
+    }
+    // Bold
+    else if(code == 1) style->bold = ANSI_State_Set;
+    else if(code == 22) style->bold = ANSI_State_Reset;
+    // Italic
+    else if(code == 3) style->italic = ANSI_State_Set;
+    else if(code == 23) style->italic = ANSI_State_Reset;
+    // Underline
+    else if(code == 4) style->underline = ANSI_State_Set;
+    else if(code == 24) style->underline = ANSI_State_Reset;
+    // Underline color (58)
+    else if(code == 58 && args.len > i + 1) {
+      // Handle underline color 58 codes
+      style->ul_change = 1;
+      int c = args.items[i+1];
+      // 58;5;n for 256 colors - check first!
+      if(c == 5 && args.len > i + 2) {
+        c = args.items[i+2];
+        if(c < 16) {
+          style->ul_color.r = ANSI_ColorPalette[c][0];
+          style->ul_color.g = ANSI_ColorPalette[c][1];
+          style->ul_color.b = ANSI_ColorPalette[c][2];
+        } else if(c < 232) {
+          int idx = c - 16;
+          style->ul_color.r = (idx / 36) * 51;
+          style->ul_color.g = ((idx / 6) % 6) * 51;
+          style->ul_color.b = (idx % 6) * 51;
+        } else {
+          int g = (c - 232) * 10 + 8;
+          style->ul_color.r = g;
+          style->ul_color.g = g;
+          style->ul_color.b = g;
+        }
+        i += 2;
+      }
+      // 58;2;r;g;b for RGB underline color
+      else if(c == 2 && args.len > i + 4) {
+        style->ul_color.r = args.items[i+2];
+        style->ul_color.g = args.items[i+3];
+        style->ul_color.b = args.items[i+4];
+        i += 4;
+      }
+      // Direct 16-color (58;0 to 58;15)
+      else if(c >= 0 && c < 16) {
+        style->ul_color.r = ANSI_ColorPalette[c][0];
+        style->ul_color.g = ANSI_ColorPalette[c][1];
+        style->ul_color.b = ANSI_ColorPalette[c][2];
+        i++;
+      }
+    }
+    // Blink
+    else if(code == 5) style->blink = ANSI_State_Set;
+    else if(code == 25) style->blink = ANSI_State_Reset;
+    // Inverse
+    else if(code == 7) style->inverse = ANSI_State_Set;
+    else if(code == 27) style->inverse = ANSI_State_Reset;
+    // Hidden/Invisible
+    else if(code == 8) style->invisible = ANSI_State_Set;
+    else if(code == 28) style->invisible = ANSI_State_Reset;
+    // Strikethrough
+    else if(code == 9) style->strikethrough = ANSI_State_Set;
+    else if(code == 29) style->strikethrough = ANSI_State_Reset;
+    // Foreground color (30-37)
+    else if(code >= 30 && code <= 37) {
+      style->fg_change = 1;
+      int idx = code - 30;
+      style->fg_color.r = ANSI_ColorPalette[idx][0];
+      style->fg_color.g = ANSI_ColorPalette[idx][1];
+      style->fg_color.b = ANSI_ColorPalette[idx][2];
+    }
+    // Background color (40-47)
+    else if(code >= 40 && code <= 47) {
+      style->bg_change = 1;
+      int idx = code - 40;
+      style->bg_color.r = ANSI_ColorPalette[idx][0];
+      style->bg_color.g = ANSI_ColorPalette[idx][1];
+      style->bg_color.b = ANSI_ColorPalette[idx][2];
+    }
+    // Bright foreground (90-97)
+    else if(code >= 90 && code <= 97) {
+      style->fg_change = 1;
+      if(code == 90) { style->fg_color.r = 128; style->fg_color.g = 128; style->fg_color.b = 128; }
+      else if(code == 91) { style->fg_color.r = 255; style->fg_color.g = 85; style->fg_color.b = 85; }
+      else if(code == 92) { style->fg_color.r = 85; style->fg_color.g = 255; style->fg_color.b = 85; }
+      else if(code == 93) { style->fg_color.r = 255; style->fg_color.g = 255; style->fg_color.b = 85; }
+      else if(code == 94) { style->fg_color.r = 85; style->fg_color.g = 85; style->fg_color.b = 255; }
+      else if(code == 95) { style->fg_color.r = 255; style->fg_color.g = 85; style->fg_color.b = 255; }
+      else if(code == 96) { style->fg_color.r = 85; style->fg_color.g = 255; style->fg_color.b = 255; }
+      else if(code == 97) { style->fg_color.r = 255; style->fg_color.g = 255; style->fg_color.b = 255; }
+    }
+    // Bright background (100-107)
+    else if(code >= 100 && code <= 107) {
+      style->bg_change = 1;
+      if(code == 100) { style->bg_color.r = 128; style->bg_color.g = 128; style->bg_color.b = 128; }
+      else if(code == 101) { style->bg_color.r = 255; style->bg_color.g = 85; style->bg_color.b = 85; }
+      else if(code == 102) { style->bg_color.r = 85; style->bg_color.g = 255; style->bg_color.b = 85; }
+      else if(code == 103) { style->bg_color.r = 255; style->bg_color.g = 255; style->bg_color.b = 85; }
+      else if(code == 104) { style->bg_color.r = 85; style->bg_color.g = 85; style->bg_color.b = 255; }
+      else if(code == 105) { style->bg_color.r = 255; style->bg_color.g = 85; style->bg_color.b = 255; }
+      else if(code == 106) { style->bg_color.r = 85; style->bg_color.g = 255; style->bg_color.b = 255; }
+      else if(code == 107) { style->bg_color.r = 255; style->bg_color.g = 255; style->bg_color.b = 255; }
+    }
+    // 256 color mode foreground (38;5;n)
+    else if(args.len > i + 2 && code == 38 && args.items[i+1] == 5) {
+      style->fg_change = 1;
+      int c = args.items[i+2];
+      if(c < 16) {
+        style->fg_color.r = ANSI_ColorPalette[c][0];
+        style->fg_color.g = ANSI_ColorPalette[c][1];
+        style->fg_color.b = ANSI_ColorPalette[c][2];
+      } else if(c < 232) {
+        int idx = c - 16;
+        style->fg_color.r = (idx / 36) * 51;
+        style->fg_color.g = ((idx / 6) % 6) * 51;
+        style->fg_color.b = (idx % 6) * 51;
+      } else {
+        int g = (c - 232) * 10 + 8;
+        style->fg_color.r = g;
+        style->fg_color.g = g;
+        style->fg_color.b = g;
+      }
+      i += 2;
+    }
+    // 256 color mode background (48;5;n)
+    else if(args.len > i + 2 && code == 48 && args.items[i+1] == 5) {
+      style->bg_change = 1;
+      int c = args.items[i+2];
+      if(c < 16) {
+        style->bg_color.r = ANSI_ColorPalette[c][0];
+        style->bg_color.g = ANSI_ColorPalette[c][1];
+        style->bg_color.b = ANSI_ColorPalette[c][2];
+      } else if(c < 232) {
+        int idx = c - 16;
+        style->bg_color.r = (idx / 36) * 51;
+        style->bg_color.g = ((idx / 6) % 6) * 51;
+        style->bg_color.b = (idx % 6) * 51;
+      } else {
+        int g = (c - 232) * 10 + 8;
+        style->bg_color.r = g;
+        style->bg_color.g = g;
+        style->bg_color.b = g;
+      }
+      i += 2;
+    }
+    // Underline color (58) - same as foreground
+    // 58;n for 16 colors
+    else if(code == 58 && args.len > i + 1) {
+      style->ul_change = 1;
+      int c = args.items[i+1];
+      // Direct 16-color (58;0 to 58;15)
+      if(c >= 0 && c < 16) {
+        style->ul_color.r = ANSI_ColorPalette[c][0];
+        style->ul_color.g = ANSI_ColorPalette[c][1];
+        style->ul_color.b = ANSI_ColorPalette[c][2];
+        i++;
+      }
+      // 58;5;n for 256 colors
+      else if(args.items[i+1] == 5 && args.len > i + 2) {
+        c = args.items[i+2];
+        if(c < 16) {
+          style->ul_color.r = ANSI_ColorPalette[c][0];
+          style->ul_color.g = ANSI_ColorPalette[c][1];
+          style->ul_color.b = ANSI_ColorPalette[c][2];
+        } else if(c < 232) {
+          int idx = c - 16;
+          style->ul_color.r = (idx / 36) * 51;
+          style->ul_color.g = ((idx / 6) % 6) * 51;
+          style->ul_color.b = (idx % 6) * 51;
+        } else {
+          int g = (c - 232) * 10 + 8;
+          style->ul_color.r = g;
+          style->ul_color.g = g;
+          style->ul_color.b = g;
+        }
+        i += 2;
+      }
+      // 58;2;r;g;b for RGB underline color
+      else if(args.items[i+1] == 2 && args.len > i + 4) {
+        style->ul_color.r = args.items[i+2];
+        style->ul_color.g = args.items[i+3];
+        style->ul_color.b = args.items[i+4];
+        i += 4;
+      }
+    }
+    // True color foreground (38;2;r;g;b)
+    else if(args.len > i + 4 && code == 38 && args.items[i+1] == 2) {
+      style->fg_change = 1;
+      style->fg_color.r = args.items[i+2];
+      style->fg_color.g = args.items[i+3];
+      style->fg_color.b = args.items[i+4];
+      i += 4;
+    }
+    // True color background (48;2;r;g;b)
+    else if(args.len > i + 4 && code == 48 && args.items[i+1] == 2) {
+      style->bg_change = 1;
+      style->bg_color.r = args.items[i+2];
+      style->bg_color.g = args.items[i+3];
+      style->bg_color.b = args.items[i+4];
+      i += 4;
+    }
+  }
+  
+  free(args.items);
   return true;
 }
 
 static bool ansi_decode_csi(ANSI_Cmd* cmd, const char* data, size_t len) {
   // CSI format: ESC [ Pm... final (len is already exact)
-  // if(len < 2 || data[0] != '[') return ansi_append_invalid(cmd,data, len);
 
   const char* params = data + 2;  // Skip ESC[
   size_t params_len = len - 2;
@@ -439,8 +670,8 @@ static bool ansi_decode_csi(ANSI_Cmd* cmd, const char* data, size_t len) {
       return cmd;
     }
 
-    // Style (SGR) //TODO: parse ansi styles
-    case 'm': return ansi_append_invalid(cmd, data, len);
+    // Style (SGR)
+    case 'm': return ansi_parser_sgr(cmd, params, params_len);
     // Cursor position (CUP/HVP)
     case 'H': case 'f': return ansi_append_invalid(cmd, data, len);
     // Mode set/reset (DECSET/DECRST)
@@ -531,4 +762,105 @@ bool ansi_decode_cmd(ANSI_Cmd* cmd,const char* data, size_t len) {
       default:
           return ansi_append_invalid(cmd, data, cmd_len);
   }
+}
+
+void ansi_debug_cmd(const ANSI_Cmd* cmd) {
+  if(!cmd) { printf("(null)\n"); return; }
+  
+  printf("{ ");
+  
+  // Print invalid commands
+  if(cmd->invalid.len > 0) {
+    printf("invalid.len=%zu ", cmd->invalid.len);
+  }
+  
+  // Print action commands
+  if(cmd->action.clear_screen) {
+    printf("action.clear_screen=%d ", cmd->action.clear_screen_mode);
+  }
+  if(cmd->action.clear_line) {
+    printf("action.clear_line=%d ", cmd->action.clear_line_mode);
+  }
+  if(cmd->action.scroll != 0) {
+    printf("action.scroll=%d ", cmd->action.scroll);
+  }
+  if(cmd->action.save_restore_cursor != 0) {
+    printf("action.save_restore_cursor=%d ", cmd->action.save_restore_cursor);
+  }
+  if(cmd->action.soft_reset) {
+    printf("action.soft_reset=%d ", cmd->action.soft_reset);
+  }
+  
+  // Print style commands
+if(cmd->style.reset) printf("style.reset=1 ");
+  if(cmd->style.bold) printf("style.bold=%d ", cmd->style.bold);
+  if(cmd->style.italic) printf("style.italic=%d ", cmd->style.italic);
+  if(cmd->style.underline) printf("style.underline=%d ", cmd->style.underline);
+  if(cmd->style.fg_change) {
+    printf("style.fg=#%02X%02X%02X", cmd->style.fg_color.r, cmd->style.fg_color.g, cmd->style.fg_color.b);
+    printf("\033[48;2;%d;%d;%dm  \033[0m", cmd->style.fg_color.r, cmd->style.fg_color.g, cmd->style.fg_color.b);
+  }
+  if(cmd->style.bg_change) {
+    printf(" style.bg=#%02X%02X%02X", cmd->style.bg_color.r, cmd->style.bg_color.g, cmd->style.bg_color.b);
+    printf("\033[48;2;%d;%d;%dm  \033[0m", cmd->style.bg_color.r, cmd->style.bg_color.g, cmd->style.bg_color.b);
+  }
+  if(cmd->style.ul_change) {
+    printf("style.ul=#%02X%02X%02X", cmd->style.ul_color.r, cmd->style.ul_color.g, cmd->style.ul_color.b);
+    printf("\e[48;2;%d;%d;%dm  \e[0m", cmd->style.ul_color.r, cmd->style.ul_color.g, cmd->style.ul_color.b);
+  }
+  
+  // Print cursor commands
+  if(cmd->cursor.move_absolute) {
+    printf("cursor.move_absolute=%d ", cmd->cursor.move_absolute);
+  }
+  if(cmd->cursor.move_relative) {
+    printf("cursor.move_relative=%d ", cmd->cursor.move_relative);
+  }
+  if(cmd->cursor.visible) printf("cursor.visible=%d ", cmd->cursor.visible);
+  
+  // Print window commands
+  if(cmd->window.window_resize) printf("window.window_resize=%d ", cmd->window.window_resize);
+  if(cmd->window.scroll_region) printf("window.scroll_region=%d ", cmd->window.scroll_region);
+  
+  // Print feature commands
+  if(cmd->feature.cursor_keys)         printf("feature.cursor_keys=%d ", cmd->feature.cursor_keys);
+  if(cmd->feature.us_ascii_vt100)  printf("feature.us_ascii_vt100=%d ", cmd->feature.us_ascii_vt100);
+  if(cmd->feature.enable_cols132)  printf("feature.enable_cols132=%d ", cmd->feature.enable_cols132);
+  if(cmd->feature.smooth_scroll)  printf("feature.smooth_scroll=%d ", cmd->feature.smooth_scroll);
+  if(cmd->feature.reverse_video)  printf("feature.reverse_video=%d ", cmd->feature.reverse_video);
+  if(cmd->feature.cursor_relative)  printf("feature.cursor_relative=%d ", cmd->feature.cursor_relative);
+  if(cmd->feature.wraparround_mode) printf("feature.wraparround_mode=%d ", cmd->feature.wraparround_mode);
+  if(cmd->feature.autorepeat_keys) printf("feature.autorepeat_keys=%d ", cmd->feature.autorepeat_keys);
+  if(cmd->feature.mouse_tracking_on_press) printf("feature.mouse_tracking_on_press=%d ", cmd->feature.mouse_tracking_on_press);
+  if(cmd->feature.show_cursor)          printf("feature.show_cursor=%d ", cmd->feature.show_cursor);
+  if(cmd->feature.enable_alt_screen0)   printf("feature.enable_alt_screen0=%d ", cmd->feature.enable_alt_screen0);
+  if(cmd->feature.enable_keypad) printf("feature.enable_keypad=%d ", cmd->feature.enable_keypad);
+  if(cmd->feature.enable_backarrow_as_backspace) printf("feature.enable_backarrow_as_backspace=%d ", cmd->feature.enable_backarrow_as_backspace);
+  if(cmd->feature.enable_margin_mode) printf("feature.enable_margin_mode=%d ", cmd->feature.enable_margin_mode);
+  if(cmd->feature.mouse_tracking_on_pess_and_release) printf("feature.mouse_tracking_on_pess_and_release=%d ", cmd->feature.mouse_tracking_on_pess_and_release);
+  if(cmd->feature.mouse_tracking_hilite) printf("feature.mouse_tracking_hilite=%d ", cmd->feature.mouse_tracking_hilite);
+  if(cmd->feature.mouse_tracking_cell_motion) printf("feature.mouse_tracking_cell_motion=%d ", cmd->feature.mouse_tracking_cell_motion);
+  if(cmd->feature.mouse_tracking_all_motion) printf("feature.mouse_tracking_all_motion=%d ", cmd->feature.mouse_tracking_all_motion);
+  if(cmd->feature.enable_focus_events) printf("feature.enable_focus_events=%d ", cmd->feature.enable_focus_events);
+  if(cmd->feature.enable_utf8_mouse_mode) printf("feature.enable_utf8_mouse_mode=%d ", cmd->feature.enable_utf8_mouse_mode);
+  if(cmd->feature.enable_SRG_mouse_mode) printf("feature.enable_SRG_mouse_mode=%d ", cmd->feature.enable_SRG_mouse_mode);
+  if(cmd->feature.enable_alt_scroll_mode) printf("feature.enable_alt_scroll_mode=%d ", cmd->feature.enable_alt_scroll_mode);
+  if(cmd->feature.enable_alt_screen1)    printf("feature.enable_alt_screen1=%d ", cmd->feature.enable_alt_screen1);
+  if(cmd->feature.save_cursor)          printf("feature.save_cursor=%d ", cmd->feature.save_cursor);
+  if(cmd->feature.enable_alt_scree_and_save_cursor) printf("feature.enable_alt_scree_and_save_cursor=%d ", cmd->feature.enable_alt_scree_and_save_cursor);
+  if(cmd->feature.enable_bracketed_paste_mode) printf("feature.enable_bracketed_paste_mode=%d ", cmd->feature.enable_bracketed_paste_mode);
+  
+  // Print dsr commands
+  if(cmd->dsr.status) printf("dsr.status=%d ", cmd->dsr.status);
+  if(cmd->dsr.cursor) printf("dsr.cursor=%d ", cmd->dsr.cursor);
+  
+  // Print fill commands
+  if(cmd->fill.fill_rectangle) printf("fill.fill_rectangle=(%d,%d,%d,%d) ", 
+    cmd->fill.rectangle.top, cmd->fill.rectangle.left, cmd->fill.rectangle.bottom, cmd->fill.rectangle.right);
+  if(cmd->fill.erase_rectangle) printf("fill.erase_rectangle=(%d,%d,%d,%d) ", 
+    cmd->fill.rectangle.top, cmd->fill.rectangle.left, cmd->fill.rectangle.bottom, cmd->fill.rectangle.right);
+  if(cmd->fill.copy_rectangle) printf("fill.copy_rectangle=(%d,%d,%d,%d) ", 
+    cmd->fill.rectangle.top, cmd->fill.rectangle.left, cmd->fill.rectangle.bottom, cmd->fill.rectangle.right);
+  
+  printf("}");
 }
