@@ -62,24 +62,13 @@ printf("Testing SGR color codes:\n");
     printf("\n");
   }
   
-  // Test underline color (58) - 16 color (basic colors 0-15)
-  printf("\nTesting underline color (58) - basic 16 color:\n");
+// Test underline color (58) - 256 color (0-15)
+  printf("\nTesting underline color (58) - 256 color (0-15):\n");
   {
     ANSI_Cmd cmd = {0};
-    const char* buf = "\e[58;5;5m";  // underline 16 color 5 (magenta)
+    const char* buf = "\e[58;5;5m";  // underline color 5 (magenta)
     bool ok = ansi_decode_cmd(&cmd, buf, strlen(buf));
     printf("  ul color 5: ");
-    ansi_debug_cmd(&cmd);
-    printf("\n");
-  }
-  
-  // Test underline color (58) - direct 16 color (50-57 is NOT valid, just testing color 0-15)
-  printf("\nTesting underline color (58) - direct 58;n (range 0-15):\n");
-  {
-    ANSI_Cmd cmd = {0};
-    const char* buf = "\e[58;12m";  // using a smaller n to test direct 16-color
-    bool ok = ansi_decode_cmd(&cmd, buf, strlen(buf));
-    printf("  ul color 12 (bright): ");
     ansi_debug_cmd(&cmd);
     printf("\n");
   }
